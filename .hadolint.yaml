@@ -1,0 +1,7 @@
+# hadolint configuration — https://github.com/hadolint/hadolint
+ignored:
+  # Pinning distro package versions in the devcontainer images breaks builds
+  # whenever the distro publishes updates; the base images are pinned and
+  # updated by Dependabot instead.
+  - DL3008  # apt-get install without version pins
+  - DL3041  # dnf install without version pins

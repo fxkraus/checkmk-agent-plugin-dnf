@@ -1,0 +1,55 @@
+services:
+  checkmk:
+    build:
+      context: ..
+      dockerfile: .devcontainer/checkmk/Dockerfile
+    hostname: checkmk-server
+    container_name: checkmk-dnf-checkmk
+    ports:
+      # Loopback only: the site's admin credentials are well-known dev defaults.
+      - "127.0.0.1:5000:5000"
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ..:/workspace:cached
+    networks:
+      - checkmk-net
+    environment:
+      CMK_PASSWORD: "cmk"
+      CMK_SITE_ID: "cmk"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    # Uncomment for Podman with rootless user namespace mapping:
+    # userns_mode: keep-id
+
+  almalinux:
+    build:
+      context: ..
+      dockerfile: .devcontainer/almalinux/Dockerfile
+    hostname: almalinux-host
+    container_name: checkmk-dnf-almalinux
+    volumes:
+      - ..:/workspace:ro
+    networks:
+      - checkmk-net
+    depends_on:
+      - checkmk
+    environment:
+      CMK_SERVER: "checkmk-server"
+      CMK_SITE: "cmk"
+      CMK_USER: "cmkadmin"
+      CMK_PASSWORD: "cmk"
+      AGENT_HOSTNAME: "almalinux-host"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    tty: true
+    stdin_open: true
+
+networks:
+  checkmk-net:
+    driver: bridge

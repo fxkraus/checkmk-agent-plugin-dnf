@@ -1,0 +1,54 @@
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Build artifacts
+*.mkp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Secrets and key material — never commit
+.env
+.env.*
+*.p12
+*.pfx
+*.pem
+*.key
+
+# Local virtualenvs and logs
+.venv/
+*.log
+
+# Credential files that sometimes end up in a working copy
+id_rsa*
+id_ed25519*
+.netrc
+.pypirc
+
+# Local AI assistant notes
+CLAUDE.md

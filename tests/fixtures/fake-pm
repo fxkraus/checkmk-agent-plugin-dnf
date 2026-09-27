@@ -1,0 +1,30 @@
+#!/bin/bash
+# Stand-in for dnf5/dnf/yum in the BATS tests.
+#
+# The first two non-option arguments form a key (e.g. "check-upgrade",
+# "history-list"), suffixed with "-security" when --security is passed.
+# Prints $FAKE_PM_DIR/<key>.out if present and exits with the code in
+# $FAKE_PM_DIR/<key>.rc (default 0).
+
+: "${FAKE_PM_DIR:?FAKE_PM_DIR must point at the fake responses}"
+
+words=()
+suffix=""
+for arg in "$@"; do
+    case "$arg" in
+        --security) suffix="-security" ;;
+        -*) ;;
+        *) (( ${#words[@]} < 2 )) && words+=("$arg") ;;
+    esac
+done
+
+key="$(IFS=-; echo "${words[*]}")${suffix}"
+
+if [[ -f "${FAKE_PM_DIR}/${key}.out" ]]; then
+    cat "${FAKE_PM_DIR}/${key}.out"
+fi
+rc=0
+if [[ -f "${FAKE_PM_DIR}/${key}.rc" ]]; then
+    read -r rc < "${FAKE_PM_DIR}/${key}.rc"
+fi
+exit "$rc"

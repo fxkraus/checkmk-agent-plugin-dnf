@@ -1,0 +1,46 @@
+{
+	"name": "CheckMK DNF Plugin",
+	"dockerComposeFile": "docker-compose.yml",
+	"service": "checkmk",
+	"workspaceFolder": "/workspace",
+
+	"forwardPorts": [5000, 8000],
+	"portsAttributes": {
+		"5000": {
+			"label": "CheckMK Web UI",
+			"onAutoForward": "notify"
+		},
+		"8000": {
+			"label": "CheckMK Agent Receiver",
+			"onAutoForward": "ignore"
+		}
+	},
+
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"charliermarsh.ruff",
+				"ms-azuretools.vscode-docker"
+			],
+			"settings": {
+				"terminal.integrated.defaultProfile.linux": "bash",
+				"python.defaultInterpreterPath": "/omd/sites/cmk/bin/python3"
+			}
+		}
+	},
+
+	"postCreateCommand": "bash /workspace/.devcontainer/scripts/post-create.sh",
+
+	"containerUser": "cmk",
+
+	"remoteEnv": {
+		"PATH": "/omd/sites/cmk/bin:/omd/sites/cmk/local/lib/python3/bin/:${containerEnv:PATH}",
+		"OMD_ROOT": "/omd/sites/cmk",
+		"OMD_SITE": "cmk",
+		"CMK_SITE_ID": "cmk",
+		"CMK_USER": "cmkadmin",
+		"CMK_PASSWORD": "cmk",
+		"WORKSPACE": "${containerWorkspaceFolder}"
+	}
+}
