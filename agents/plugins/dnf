@@ -23,7 +23,7 @@
 # Copyright 2023, Timo Klecker <klecker@decoit.de>
 # Copyright 2026, Felix Kraus <16723031+fxkraus@users.noreply.github.com>
 #
-# License: GPLv2
+# SPDX-License-Identifier: GPL-2.0-only
 
 # Set the version to be captured in newer versions of CheckMK inventory
 CMK_VERSION="0.0.0"

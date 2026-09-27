@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026, Felix Kraus <16723031+fxkraus@users.noreply.github.com>
+# SPDX-License-Identifier: GPL-2.0-only
 """Checkmk 2.5 ruleset for deploying the DNF agent plugin via the Agent Bakery."""
 
 from collections.abc import Mapping

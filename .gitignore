@@ -52,3 +52,12 @@ id_ed25519*
 
 # Local AI assistant notes
 CLAUDE.md
+
+# Local AI assistant settings and further credential / state files
+.claude/
+CLAUDE.local.md
+.npmrc
+credentials
+kubeconfig
+*.tfstate*
+*.tfvars

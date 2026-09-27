@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
 # ============================================================================
 # Discover Services — Trigger service discovery on a monitored host
 # Uses the CheckMK REST API to discover and accept all services.
