@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
 # ============================================================================
 # AlmaLinux Agent Entrypoint
 # Downloads and installs the CheckMK agent, deploys the dnf plugin,

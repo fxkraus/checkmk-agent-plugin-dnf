@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-only
 """Unit tests for the DNF agent-based check plugin."""
 
 from collections.abc import Mapping

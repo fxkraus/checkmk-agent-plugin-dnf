@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-only
 # Build entrypoint: packages the DNF check plugin as an MKP extension.
 # Runs inside the Checkmk Docker container.
 # See https://docs.checkmk.com/latest/en/mkps.html

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # Makefile for the CheckMK DNF Update Plugin
 # Run `make help` to see available targets.
 #

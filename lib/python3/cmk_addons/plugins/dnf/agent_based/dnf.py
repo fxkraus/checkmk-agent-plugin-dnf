@@ -18,8 +18,9 @@ Example agent output:
 # Copyright 2021, Marco Lenhardt <marco.lenhardt@ontec.at>
 # Copyright 2021, Henrik Giessel <henrik.giessel@yahoo.de>
 # Copyright 2023, Timo Klecker <klecker@decoit.de>
+# Copyright 2026, Felix Kraus <16723031+fxkraus@users.noreply.github.com>
 #
-# License: GPLv2  # noqa: ERA001
+# SPDX-License-Identifier: GPL-2.0-only
 
 import contextlib
 from collections.abc import Mapping, Sequence

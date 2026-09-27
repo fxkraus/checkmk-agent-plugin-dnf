@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
 # Run the pytest suite with the Checkmk Python interpreter and libraries.
 # Intended to run inside the Checkmk image (see `make test-python-docker`).
 set -euo pipefail

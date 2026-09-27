@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
 # ============================================================================
 # Deploy Plugin — Refresh symlinks and reload CheckMK
 # Run this after changing server-side plugin code to pick up the changes.

@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
 # ============================================================================
 # Post-Create Setup — CheckMK DNF Plugin DevContainer
 # Symlinks plugin source files into the CheckMK site's local hierarchy

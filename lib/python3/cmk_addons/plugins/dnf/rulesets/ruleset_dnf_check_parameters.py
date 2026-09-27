@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026, Felix Kraus <16723031+fxkraus@users.noreply.github.com>
+# SPDX-License-Identifier: GPL-2.0-only
 """Checkmk 2.5 ruleset for DNF update check parameters."""
 
 from cmk.rulesets.v1 import Help, Title

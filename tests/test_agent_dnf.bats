@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# SPDX-License-Identifier: GPL-2.0-only
 # BATS tests for the DNF agent plugin.
 #
 # Prerequisites:
