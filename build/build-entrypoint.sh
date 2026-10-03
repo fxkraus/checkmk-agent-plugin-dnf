@@ -9,19 +9,30 @@ set -euo pipefail
 SOURCE=/source
 CMK=/omd/sites/cmk
 
+# Allow git operations on the mounted source directory
+git config --global --add safe.directory "$SOURCE"
+
+# mkp packages every file under the site's local hierarchy, so stage only the
+# files git tracks (with their working-tree content), so untracked scratch
+# files or notes in lib/ or agents/ never reach the MKP.
+STAGE=$(mktemp -d)
+git -C "$SOURCE" ls-files -z -- lib agents \
+  | tar -C "$SOURCE" --null --ignore-failed-read -T - -cf - \
+  | tar -xf - -C "$STAGE"
+
 cd "$CMK/local"
 
 # Copy plugin library files into the site's local hierarchy.
 # The two trees must be merged separately because check_mk may be a symlink
 # in the stock site layout and cp -R cannot overwrite a non-directory.
-cp -R "$SOURCE/lib/python3/"* ./lib/python3/
+cp -R "$STAGE/lib/python3/"* ./lib/python3/
 mkdir -p ./lib/check_mk/base/cee/plugins/bakery
-cp "$SOURCE/lib/check_mk/base/cee/plugins/bakery/dnf.py" \
+cp "$STAGE/lib/check_mk/base/cee/plugins/bakery/dnf.py" \
    ./lib/check_mk/base/cee/plugins/bakery/dnf.py
 
 cd share/check_mk
 # Copy agent plugin
-cp -R "$SOURCE/agents" .
+cp -R "$STAGE/agents" .
 
 # Create the MKP manifest template (must be run as site user).
 # Checkmk 2.5's cmk-mkp-tool 3.0.0 prints the template to stdout instead of
@@ -30,9 +41,6 @@ cp -R "$SOURCE/agents" .
 # login-shell output.
 MANIFEST="$CMK/tmp/check_mk/dnf.manifest.temp"
 su - cmk -c "mkdir -p $CMK/tmp/check_mk && /omd/sites/cmk/bin/mkp template dnf > $MANIFEST"
-
-# Allow git operations on the mounted source directory
-git config --global --add safe.directory "$SOURCE"
 
 # Derive the package version: the tag of a tagged commit, otherwise the
 # number of commits, which only grows along main (needs the full history).
