@@ -264,6 +264,8 @@ docker run --rm -v "$PWD:/source" checkmk-dnf-build
 ### Build Output
 
 The resulting `dnf-<version>.mkp` file is written to the repository root.
+Only files tracked by git are packaged (with their working-tree content), so
+untracked scratch files or notes under `lib/` or `agents/` never end up in it.
 
 A version number is derived automatically:
 
