@@ -57,7 +57,8 @@ jobs:
 
   # The agent parses real package-manager output, so it runs on every
   # supported RHEL major (dnf 4) plus Fedora for dnf5. The container is
-  # throwaway, so the opt-in upgrade test may modify it.
+  # throwaway, so the opt-in upgrade test may modify it. The images float on
+  # purpose (current distro packages); the job holds no secrets.
   bats:
     name: bats (${{ matrix.image }})
     runs-on: ubuntu-latest

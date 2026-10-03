@@ -52,7 +52,10 @@ if ! rpm -q check-mk-agent >/dev/null 2>&1; then
 
     curl -sf -o /tmp/check-mk-agent.rpm "${AGENTS_PAGE}${RPM_NAME}"
     echo "Installing CheckMK agent (${RPM_NAME})..."
-    rpm -ivh --nodeps /tmp/check-mk-agent.rpm || true
+    if ! rpm -ivh --nodeps /tmp/check-mk-agent.rpm; then
+        echo "ERROR: Could not install the CheckMK agent RPM"
+        exec tail -f /dev/null
+    fi
     rm -f /tmp/check-mk-agent.rpm
 else
     echo "CheckMK agent already installed."
