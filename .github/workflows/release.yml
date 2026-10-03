@@ -6,7 +6,8 @@
 # The build job only gets a read-only token and fails unless the tagged commit
 # is on main. Only the release job, which runs no build code, may write: it
 # publishes the MKP with a SHA256SUMS file and a signed build provenance
-# attestation (verify with `gh attestation verify`).
+# attestation, after verifying that attestation. The verify job then downloads
+# the published assets like a user would and checks both again.
 name: Release MKP
 
 on:
@@ -100,6 +101,18 @@ jobs:
         with:
           subject-path: "*.mkp"
 
+      # Publish nothing that wouldn't pass the users' verification
+      - name: Verify the attestation before publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for mkp in *.mkp; do
+            gh attestation verify "$mkp" -R "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-ref "$GITHUB_REF" --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners
+          done
+
       - name: Determine pre-release flag
         id: meta
         run: |
@@ -121,3 +134,30 @@ jobs:
           files: |
             *.mkp
             SHA256SUMS
+
+  # Checks what users actually download: the published assets of the release.
+  verify:
+    name: Verify published release
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - name: Download the release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" -D assets
+
+      - name: Verify checksums and build provenance
+        working-directory: assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha256sum -c SHA256SUMS
+          for mkp in *.mkp; do
+            gh attestation verify "$mkp" -R "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-ref "$GITHUB_REF" --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners
+          done

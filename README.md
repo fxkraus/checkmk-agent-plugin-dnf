@@ -295,7 +295,10 @@ The build also fails if it cannot stamp the version into the agent plugin
 
 Push a version tag on a commit of `main`; the **Release MKP** workflow builds
 the MKP and publishes a GitHub release (`iN`/`bN` tags as pre-releases) with
-a `SHA256SUMS` file and a signed build provenance attestation:
+a `SHA256SUMS` file and a signed build provenance attestation. The workflow
+verifies the attestation before publishing, then downloads the published
+assets and checks the checksums and the attestation again (job "Verify
+published release"):
 
 ```bash
 git tag v1.2.3
