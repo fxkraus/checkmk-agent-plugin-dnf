@@ -1,0 +1,26 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
+# Stand-in for systemd-run in the BATS tests.
+#
+# Records the arguments in $FAKE_PM_DIR/systemd-run.args. Exits with the code
+# in $FAKE_PM_DIR/systemd-run.rc if present; otherwise runs the command in the
+# foreground with only the --setenv variables, like a transient unit (plus
+# PATH and FAKE_PM_DIR, which the fake package manager needs).
+
+: "${FAKE_PM_DIR:?FAKE_PM_DIR must point at the fake responses}"
+
+printf '%s\n' "$@" > "${FAKE_PM_DIR}/systemd-run.args"
+
+if [[ -f "${FAKE_PM_DIR}/systemd-run.rc" ]]; then
+    read -r rc < "${FAKE_PM_DIR}/systemd-run.rc"
+    exit "$rc"
+fi
+
+env=("PATH=${PATH}" "FAKE_PM_DIR=${FAKE_PM_DIR}")
+while [[ "$1" == -* ]]; do
+    case "$1" in
+        --setenv=*) env+=("${1#--setenv=}") ;;
+    esac
+    shift
+done
+cd / && exec /usr/bin/env -i "${env[@]}" "$@"

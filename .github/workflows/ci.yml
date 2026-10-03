@@ -81,6 +81,29 @@ jobs:
               dnf -q makecache
               bats tests/test_agent_dnf.bats'
 
+  # End-to-end: the real agent RPM, socket-activated under systemd, with the
+  # plugin deployed synchronously (no interval). Catches a background refresh
+  # that is killed together with the agent's per-connection unit, which the
+  # BATS containers (no systemd) can't.
+  systemd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Extract the agent RPM from the Checkmk image
+        env:
+          IMAGE: docker.io/checkmk/check-mk-ultimatemt:2.5.0-latest
+        run: |
+          docker run --rm --entrypoint bash "$IMAGE" -c \
+            'cat /omd/versions/default/share/check_mk/agents/check-mk-agent-*.noarch.rpm' \
+            > "$RUNNER_TEMP/agent.rpm"
+
+      - name: Query the socket-activated agent
+        run: tests/systemd/test-socket-activated-agent.sh "$RUNNER_TEMP/agent.rpm"
+
   # Python tests against the real Checkmk libraries of every supported
   # version. -latest tags keep the matrix free of version maintenance.
   pytest:

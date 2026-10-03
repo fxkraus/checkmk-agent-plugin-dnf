@@ -385,6 +385,46 @@ new-pkg.x86_64                     2-1.fc42       updates
     [ "${lines[2]}" = "0" ]
 }
 
+@test "systemd: the refresh runs in its own transient unit" {
+    use_fake_pm dnf
+    ln -s "${BATS_TEST_DIRNAME}/fixtures/fake-systemd-run" "${STUB_BIN}/systemd-run"
+    rm -f "${STUB_BIN}/setsid"
+    fake_pm_reply check-update 100 'bash.x86_64    5.1.8-9.el9    baseos
+'
+    fake_pm_reply check-update-security 0
+
+    # Relative path: the unit starts in / and needs the absolute one
+    cd "$(dirname "${AGENT_PLUGIN}")"
+    run env PATH="${STUB_BIN}" bash ./dnf
+    [ "$status" -eq 0 ]
+    # The fake runs the unit in the foreground, so the result is already there
+    [ "${lines[2]}" = "1" ]
+
+    run cat "${FAKE_PM_DIR}/systemd-run.args"
+    echo "$output"
+    [[ "$output" == *$'\n--unit=cmk-agent-dnf-refresh\n'* ]]
+    [[ "$output" == *$'\n--property=RuntimeMaxSec=300\n'* ]]
+    [[ "$output" == *$'\n--setenv=MK_VARDIR='"${MK_VARDIR}"$'\n'* ]]
+    [[ "${lines[-2]}" == /* ]]
+    [ "${lines[-2]}" -ef "${AGENT_PLUGIN}" ]
+    [ "${lines[-1]}" = "--refresh" ]
+}
+
+@test "systemd: falls back to setsid when systemd-run fails" {
+    use_fake_pm dnf
+    ln -s "${BATS_TEST_DIRNAME}/fixtures/fake-systemd-run" "${STUB_BIN}/systemd-run"
+    echo 1 > "${FAKE_PM_DIR}/systemd-run.rc"
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+
+    run agent
+    [ "$status" -eq 0 ]
+    [ -s "${FAKE_PM_DIR}/systemd-run.args" ]
+    wait_for_file "${RESULT_CACHE}"
+    run agent
+    [ "${lines[2]}" = "0" ]
+}
+
 @test "Legacy 4-line cache files are removed" {
     use_fake_pm dnf
     fake_pm_reply check-update 0
