@@ -139,7 +139,9 @@ def discover_dnf(section: DnfSection) -> DiscoveryResult:
 
 
 def _check_updates(params: Mapping[str, object], section: DnfSection) -> CheckResult:
-    if section.packages == 0 and max(section.security_packages, 0) == 0:
+    # -1 (security query failed) must not read as "up to date"; -2 (not
+    # supported) carries no information about pending updates.
+    if section.packages == 0 and section.security_packages in (0, -2):
         yield Result(state=State.OK, summary="All packages are up to date")
         yield Metric(name="normal_updates", value=0)
         if section.security_packages == 0:
