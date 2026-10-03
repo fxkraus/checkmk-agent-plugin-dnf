@@ -74,3 +74,10 @@ class TestValidation:
         with pytest.raises(ValidationError):
             _validate(form.custom_validate, days)
         _validate(form.custom_validate, 1)
+
+    @pytest.mark.parametrize("hours", [0, -1])
+    def test_refresh_pending_hours_below_one_are_rejected(self, hours: int) -> None:
+        form = _parameter_form_dnf().elements["refresh_pending_max_age"].parameter_form
+        with pytest.raises(ValidationError):
+            _validate(form.custom_validate, hours)
+        _validate(form.custom_validate, 1)

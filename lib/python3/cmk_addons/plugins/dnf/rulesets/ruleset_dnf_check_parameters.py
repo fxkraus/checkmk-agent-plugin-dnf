@@ -90,6 +90,27 @@ def _parameter_form_dnf() -> Dictionary:
                 ),
                 required=False,
             ),
+            "refresh_pending_max_age": DictElement(
+                parameter_form=Integer(
+                    title=Title("Maximum time without a completed background refresh"),
+                    help_text=Help(
+                        "The agent plugin serves cached counts and recomputes them in the background when the package state "
+                        "changes. If no refresh has completed for this long, for example because it keeps timing out or the "
+                        "package manager keeps failing, the counts may be outdated."
+                    ),
+                    unit_symbol="hours",
+                    prefill=DefaultValue(2),
+                    custom_validate=(validators.NumberInRange(min_value=1),),
+                ),
+                required=False,
+            ),
+            "refresh_pending_state": DictElement(
+                parameter_form=ServiceState(
+                    title=Title("State when no background refresh has completed"),
+                    prefill=DefaultValue(ServiceState.WARN),
+                ),
+                required=False,
+            ),
         },
     )
 

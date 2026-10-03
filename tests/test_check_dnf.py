@@ -37,6 +37,8 @@ def default_params() -> Mapping[str, object]:
         "last_update_state": 1,
         "metadata_max_age": 7,
         "metadata_age_state": 1,
+        "refresh_pending_max_age": 2,
+        "refresh_pending_state": 1,
         "reboot_req": 2,
     }
 
@@ -131,6 +133,16 @@ class TestParseDnf:
         assert result.packages == 3
         assert result.last_update_timestamp == 1700000000
         assert result.metadata_timestamp == -1
+
+    def test_parse_refresh_pending_since(self):
+        """Line 6 carries the start of the oldest unfinished background refresh."""
+        result = parse_dnf([["no"], ["0"], ["0"], ["1700000000"], ["1700050000"], ["1700060000"]])
+        assert result.refresh_pending_since == 1700060000
+
+    def test_parse_without_refresh_pending_line(self):
+        """Output of older agent plugins (5 data lines) still parses."""
+        result = parse_dnf([["no"], ["0"], ["0"], ["1700000000"], ["1700050000"]])
+        assert result.refresh_pending_since == -1
 
     def test_parse_malformed_numbers(self):
         """Malformed numeric values should default gracefully."""
@@ -410,3 +422,45 @@ class TestMetadataAge:
 
         assert all(r.state == State.OK for r in results)
         assert not any("metadata" in r.details for r in results)
+
+
+class TestRefreshPending:
+    """Cached counts that no refresh completes for must not look current."""
+
+    NOW = 1700000000 + 30 * 86400
+
+    @pytest.fixture(autouse=True)
+    def _now(self):
+        with patch("cmk_addons.plugins.dnf.agent_based.dnf.time", return_value=self.NOW):
+            yield
+
+    def _results(self, params, refresh_pending_since):
+        section = DnfSection(
+            reboot_required=False,
+            packages=0,
+            security_packages=0,
+            last_update_timestamp=self.NOW - 86400,
+            refresh_pending_since=refresh_pending_since,
+        )
+        return [r for r in check_dnf(params, section) if isinstance(r, Result)]
+
+    @pytest.mark.parametrize("since", [-1, NOW - 600], ids=["none", "running"])
+    def test_no_or_recent_pending_refresh_is_ok(self, default_params, since):
+        results = self._results(default_params, since)
+
+        assert all(r.state == State.OK for r in results)
+        assert not any("outdated" in r.details for r in results)
+
+    def test_long_pending_refresh_warns(self, default_params):
+        results = self._results(default_params, self.NOW - 3 * 3600)
+
+        warn = [r for r in results if r.state == State.WARN]
+        assert len(warn) == 1
+        assert warn[0].summary.startswith("Update information may be outdated")
+        assert "3 hours" in warn[0].summary
+
+    def test_threshold_and_state_are_configurable(self, default_params):
+        params = {**default_params, "refresh_pending_max_age": 4, "refresh_pending_state": 2}
+
+        assert all(r.state == State.OK for r in self._results(params, self.NOW - 3 * 3600))
+        assert any(r.state == State.CRIT for r in self._results(params, self.NOW - 5 * 3600))
