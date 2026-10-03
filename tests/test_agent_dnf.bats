@@ -26,6 +26,8 @@ setup() {
     RESULT_CACHE="${MK_VARDIR}/cache/dnf_updates.cache"
     PENDING="${MK_VARDIR}/cache/dnf_refresh_pending.cache"
     STUB_BIN=""
+    # Written by the fingerprint test only, removed in teardown
+    TEST_REPO_FILE="/etc/yum.repos.d/bats-fingerprint-test.repo"
 }
 
 # Run the agent, restricted to STUB_BIN when use_fake_pm set one up.
@@ -110,6 +112,7 @@ fake_kernel() {
 }
 
 teardown() {
+    rm -f "${TEST_REPO_FILE}"
     # A background refresh may still be starting up or writing into the cache
     # directory, so wait for its lock and retry the removal.
     local i
@@ -559,6 +562,33 @@ Reboot should not be necessary.
     grep -qx "boot_id $(cat /proc/sys/kernel/random/boot_id)" "${MK_VARDIR}/cache/dnf_pkg_state.cache"
 }
 
+@test "The package manager always runs in the C locale" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    fake_pm_reply needs-restarting 0 'Reboot should not be necessary.
+'
+    LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8 agent --refresh
+    run cat "${FAKE_PM_DIR}"/*.lc_all
+    [ "${#lines[@]}" -ge 4 ]
+    for line in "${lines[@]}"; do
+        [ "$line" = "C" ]
+    done
+}
+
+@test "The fingerprint covers the package manager configuration" {
+    if [[ ! -w /etc/yum.repos.d ]] || ! command -v find &>/dev/null; then
+        skip "/etc/yum.repos.d not writable"
+    fi
+    use_fake_pm dnf
+    ln -s "$(command -v find)" "${STUB_BIN}/find"
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    : > "${TEST_REPO_FILE}"
+    agent --refresh
+    grep -q "^${TEST_REPO_FILE} " "${MK_VARDIR}/cache/dnf_pkg_state.cache"
+}
+
 @test "Legacy 4-line cache files are removed" {
     use_fake_pm dnf
     fake_pm_reply check-update 0
@@ -707,6 +737,23 @@ Begin time     : 2026-09-27 10:48:33
         > "${FAKE_PM_DIR}/config-owners"
     run_agent_refreshed
     [ "${lines[1]}" = "no" ]
+}
+
+@test "Reboot: the running kernel's package is found via its vmlinuz" {
+    use_fake_pm dnf
+    fake_kernel 5.14.0-503.9.1.el9 5.14.0-503.9.1.el9 5.14.0-503.10.1.el9
+    echo "/lib/modules/5.14.0-503.9.1.el9.x86_64/vmlinuz" > "${FAKE_PM_DIR}/owned-paths"
+    run_agent_refreshed
+    [ "${lines[1]}" = "yes" ]
+    [ "$(head -n1 "${FAKE_PM_DIR}/rpm-qf.args")" = "/lib/modules/5.14.0-503.9.1.el9.x86_64/vmlinuz" ]
+}
+
+@test "Reboot: falls back to the kernel config when vmlinuz is not owned" {
+    use_fake_pm dnf
+    fake_kernel 5.14.0-503.9.1.el9 5.14.0-503.9.1.el9 5.14.0-503.10.1.el9
+    echo "/boot/config-5.14.0-503.9.1.el9.x86_64" > "${FAKE_PM_DIR}/owned-paths"
+    run_agent_refreshed
+    [ "${lines[1]}" = "yes" ]
 }
 
 @test "Reboot: a kernel config owned by no package needs no reboot" {

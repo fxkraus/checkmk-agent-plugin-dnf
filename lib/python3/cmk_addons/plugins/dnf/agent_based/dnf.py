@@ -198,9 +198,9 @@ def _check_updates(params: DnfParams, section: DnfSection) -> CheckResult:
                     notice=f"Security packages: {section.security_packages_list}",
                 )
 
+    # No security_updates metric for -2: a 0 would read as "none pending".
     if section.security_packages == -2:
         yield Result(state=State.OK, notice="Security update check not available")
-        yield Metric(name="security_updates", value=0)
     elif section.security_packages == -1:
         yield Result(state=State.UNKNOWN, summary="Security update check failed")
 
@@ -270,7 +270,15 @@ def check_dnf(params: DnfParams, section: DnfSection) -> CheckResult:
         return
 
     if section.packages < 0:
-        yield Result(state=State.UNKNOWN, summary="No package information available")
+        yield Result(
+            state=State.UNKNOWN,
+            summary="No package information available: the cache-only package query failed",
+            details=(
+                "No package information available: the cache-only package query failed. Usually the repository metadata "
+                "cache is missing; check that the dnf-makecache/dnf5-makecache timer is running, or run 'dnf makecache' "
+                "on the host. A package manager lock or a broken repository configuration can also cause this."
+            ),
+        )
         return
 
     yield from _check_updates(params, section)

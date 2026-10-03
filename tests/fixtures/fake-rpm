@@ -3,7 +3,10 @@
 # Stand-in for rpm in the BATS reboot tests; ignores --qf.
 #
 #   rpm -qf <file>  prints $FAKE_PM_DIR/config-owners ("NAME VERSION-RELEASE"
-#                   lines), or exits 1 like rpm does for a file no package owns
+#                   lines), or exits 1 like rpm does for a file no package owns.
+#                   If $FAKE_PM_DIR/owned-paths exists, only the files listed
+#                   there are owned. Each queried file is appended to
+#                   $FAKE_PM_DIR/rpm-qf.args.
 #   rpm -q <name>   prints $FAKE_PM_DIR/kernels (installed VERSION-RELEASE
 #                   lines, in install order)
 
@@ -11,8 +14,12 @@
 
 case "$1" in
     -qf)
-        if [[ ! -f "${FAKE_PM_DIR}/config-owners" ]]; then
-            echo "file ${*: -1} is not owned by any package"
+        file="${*: -1}"
+        echo "${file}" >> "${FAKE_PM_DIR}/rpm-qf.args"
+        if [[ ! -f "${FAKE_PM_DIR}/config-owners" ]] \
+            || { [[ -f "${FAKE_PM_DIR}/owned-paths" ]] \
+                 && ! grep -qxF -- "${file}" "${FAKE_PM_DIR}/owned-paths"; }; then
+            echo "file ${file} is not owned by any package"
             exit 1
         fi
         cat "${FAKE_PM_DIR}/config-owners"

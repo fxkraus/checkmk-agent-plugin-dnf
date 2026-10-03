@@ -211,6 +211,20 @@ class TestCheckDnf:
 
         assert any(r.state.value == 3 for r in results if hasattr(r, "state"))
 
+    def test_check_no_packages_info_points_at_makecache(self, default_params):
+        """A failed cache-only query should hint at the missing metadata cache."""
+        results = list(check_dnf(default_params, DnfSection(packages=-1)))
+
+        assert any(isinstance(r, Result) and "makecache" in r.details for r in results)
+
+    @pytest.mark.parametrize("packages", [0, 3])
+    def test_check_security_unsupported_has_no_metric(self, default_params, packages):
+        """An unknown number of security updates must not be graphed as 0."""
+        section = DnfSection(reboot_required=False, packages=packages, security_packages=-2, last_update_timestamp=2000000000)
+        results = list(check_dnf(default_params, section))
+
+        assert "security_updates" not in [r.name for r in results if isinstance(r, Metric)]
+
     def test_check_all_up_to_date(self, default_params):
         """No pending updates should result in OK state."""
         section = DnfSection(

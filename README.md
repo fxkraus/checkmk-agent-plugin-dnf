@@ -73,8 +73,11 @@ it is older than 7 days (configurable).
   refreshed for a configurable number of days (see
   [Requirements](#requirements)).
 - **Never blocks the agent** — every agent run answers from a cache right away.
-  When repo metadata or the installed packages change (repo `repomd.xml`, rpm
-  database), a background run recomputes the result, capped at 5 minutes.
+  When repo metadata, the installed packages or the package manager
+  configuration change (repo `repomd.xml`, rpm database, `dnf.conf`, `.repo`
+  files, versionlock list) or the host reboots, a background run recomputes
+  the result, capped at 5 minutes. Package manager output is always parsed in
+  the C locale.
   On systemd hosts it runs in its own transient unit
   (`systemd-run --unit=cmk-agent-dnf-refresh`), because Checkmk's
   socket-activated `check-mk-agent@.service` kills every process left behind
@@ -90,7 +93,9 @@ it is older than 7 days (configurable).
 - **Agent Bakery** — deploy the agent plugin automatically, either on every
   agent call or asynchronously at an interval.
 - **Graphing** — emits `normal_updates` and `security_updates` metrics,
-  rendered by Checkmk 2.5's built-in update graphs and perfometer.
+  rendered by Checkmk 2.5's built-in update graphs and perfometer. No
+  `security_updates` value is emitted while the security check is
+  unavailable, so the graph shows a gap rather than 0.
 
 ---
 
