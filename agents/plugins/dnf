@@ -11,10 +11,12 @@
 #   Line 2: Number of available updates (-1 on error)
 #   Line 3: Number of security updates [-1 error, -2 unsupported] [comma-separated list]
 #   Line 4: Unix timestamp of last update (-1 if unknown)
+#   Line 5: Unix timestamp of the newest repository metadata refresh (-1 if none)
 #
 # Lines 2-4 come from a cache so the agent never waits on dnf. When the
 # package-manager cache changes, a detached background run (--refresh)
-# recomputes them within REFRESH_TIMEOUT. Line 1 is computed on every run.
+# recomputes them within REFRESH_TIMEOUT. Lines 1 and 5 are computed on every
+# run.
 #
 # Copyright 2015, Henri Wahl <h.wahl@ifw-dresden.de>
 # Copyright 2018, Moritz Schlarb <schlarbm@uni-mainz.de>
@@ -38,8 +40,10 @@ readonly REFRESH_TIMEOUT=300
 # Limit when setsid/flock are missing and the refresh has to run inline;
 # stays below Checkmk's 60 s agent timeout
 readonly INLINE_REFRESH_TIMEOUT=45
-# Number of recent dnf5 transactions searched for the last upgrade
-readonly HISTORY_DEPTH=20
+# dnf5 transactions searched for the last upgrade, newest first: in total and
+# per "history info" call
+readonly HISTORY_DEPTH=500
+readonly HISTORY_BATCH=50
 # dnf 4/yum plugins stay enabled so versionlock (a plugin there) is honoured,
 # like dnf5 does natively. The RHEL subscription plugins may contact the
 # entitlement server even in cache-only mode, so they are disabled.
@@ -209,19 +213,24 @@ count_security_updates() {
 
 get_last_upgrade_dnf5() {
     local -a ids
-    local history id_list begin
+    local history id_list begin i
 
     history=$(dnf5 history list 2>/dev/null) || true
-    id_list=$(awk -v max="$HISTORY_DEPTH" '$1 ~ /^[0-9]+$/ && n++ < max {print $1}' <<< "$history") || true
+    id_list=$(awk '$1 ~ /^[0-9]+$/ {print $1}' <<< "$history" | sort -rn | head -n "$HISTORY_DEPTH") || true
     read -r -d '' -a ids <<< "$id_list" || true
-    (( ${#ids[@]} )) || return 0
 
+    # The first batch (newest first) with an upgrade contains the latest one.
     # "Begin time" is YYYY-MM-DD HH:MM:SS, so the string maximum is the latest.
-    begin=$(dnf5 history info "${ids[@]}" 2>/dev/null \
-        | awk '/^Begin time/ {sub(/^Begin time *: */, ""); begin = $0}
-               /^[[:space:]]+Upgrade[[:space:]]/ && begin > last {last = begin}
-               END {print last}')
-    [[ -n "$begin" ]] && date -d "$begin" +"%s" 2>/dev/null
+    for (( i = 0; i < ${#ids[@]}; i += HISTORY_BATCH )); do
+        begin=$(dnf5 history info "${ids[@]:i:HISTORY_BATCH}" 2>/dev/null \
+            | awk '/^Begin time/ {sub(/^Begin time *: */, ""); begin = $0}
+                   /^[[:space:]]+Upgrade[[:space:]]/ && begin > last {last = begin}
+                   END {print last}')
+        if [[ -n "$begin" ]]; then
+            date -d "$begin" +"%s" 2>/dev/null
+            return
+        fi
+    done
 }
 
 # --- Determine timestamp of last successful update ---
@@ -244,6 +253,20 @@ get_last_update_timestamp() {
     esac
 
     echo "${timestamp:--1}"
+}
+
+# --- Newest repository metadata refresh (-1 if none) ---
+# Queries run cache-only, so results are only as fresh as the metadata that
+# dnf-makecache.timer / dnf5-makecache.timer downloads. makecache rewrites
+# repomd.xml only when a repo changed; when the metadata is still current it
+# touches the primary metadata instead, so that is the last confirmed refresh.
+
+get_metadata_timestamp() {
+    local newest
+    newest=$(find /var/cache/dnf /var/cache/yum /var/cache/libdnf5 \
+        -name '*primary.xml*' -printf '%T@\n' 2>/dev/null | sort -n | tail -n1) || true
+    newest="${newest%.*}"
+    echo "${newest:--1}"
 }
 
 # --- Package state fingerprint ---
@@ -355,6 +378,7 @@ main() {
     if [[ -s "$CACHE_RESULT" ]]; then
         check_reboot_required
         cat "$CACHE_RESULT"
+        get_metadata_timestamp
     else
         echo "ERROR: First update check is running in the background, results follow on the next agent run"
     fi

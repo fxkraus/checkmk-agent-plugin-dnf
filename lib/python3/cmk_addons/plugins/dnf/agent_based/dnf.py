@@ -11,6 +11,10 @@ Example agent output:
     32
     4 kernel,glibc,openssl
     1626252300
+    1626338700
+
+The last line (newest repository metadata refresh) is missing from older
+agent plugins.
 """
 #
 # Copyright 2015, Henri Wahl <h.wahl@ifw-dresden.de>
@@ -31,6 +35,7 @@ from cmk.agent_based.v2 import (
     AgentSection,
     CheckPlugin,
     CheckResult,
+    DiscoveryResult,
     Metric,
     Result,
     Service,
@@ -48,6 +53,7 @@ class DnfSection(NamedTuple):
     security_packages: int = -1
     security_packages_list: str | None = None
     last_update_timestamp: int = -1
+    metadata_timestamp: int = -1
     error_message: str | None = None
 
 
@@ -72,6 +78,7 @@ def parse_dnf(string_table: Sequence[Sequence[str]]) -> DnfSection:
     security_packages = -1
     security_packages_list: str | None = None
     last_update_timestamp = -1
+    metadata_timestamp = -1
 
     with contextlib.suppress(IndexError, ValueError):
         packages = int(string_table[1][0])
@@ -86,12 +93,16 @@ def parse_dnf(string_table: Sequence[Sequence[str]]) -> DnfSection:
     with contextlib.suppress(IndexError, ValueError):
         last_update_timestamp = int(string_table[3][0])
 
+    with contextlib.suppress(IndexError, ValueError):
+        metadata_timestamp = int(string_table[4][0])
+
     return DnfSection(
         reboot_required=reboot_required,
         packages=packages,
         security_packages=security_packages,
         security_packages_list=security_packages_list,
         last_update_timestamp=last_update_timestamp,
+        metadata_timestamp=metadata_timestamp,
     )
 
 
@@ -110,7 +121,7 @@ agent_section_dnf = AgentSection(
 # ---------------------------------------------------------------------------
 
 
-def discover_dnf(section: DnfSection):
+def discover_dnf(section: DnfSection) -> DiscoveryResult:
     """Discover one service if the dnf section is present."""
     yield Service()
 
@@ -120,24 +131,13 @@ def discover_dnf(section: DnfSection):
 # ---------------------------------------------------------------------------
 
 
-def check_dnf(params: Mapping[str, object], section: DnfSection) -> CheckResult:  # noqa: PLR0912
-    """Evaluate available DNF updates against configurable thresholds."""
-    if section.error_message:
-        yield Result(state=State.UNKNOWN, summary=section.error_message)
-        return
-
-    if section.packages < 0:
-        yield Result(state=State.UNKNOWN, summary="No package information available")
-        return
-
-    # --- Package updates -------------------------------------------------
+def _check_updates(params: Mapping[str, object], section: DnfSection) -> CheckResult:
     if section.packages == 0 and max(section.security_packages, 0) == 0:
         yield Result(state=State.OK, summary="All packages are up to date")
         yield Metric(name="normal_updates", value=0)
         if section.security_packages == 0:
             yield Metric(name="security_updates", value=0)
     else:
-        # Normal updates
         yield from check_levels(
             section.packages,
             levels_upper=params.get("normal", ("fixed", (1, 10))),
@@ -146,7 +146,6 @@ def check_dnf(params: Mapping[str, object], section: DnfSection) -> CheckResult:
             render_func=lambda v: str(int(v)),
         )
 
-        # Security updates
         if section.security_packages >= 0:
             yield from check_levels(
                 section.security_packages,
@@ -161,43 +160,64 @@ def check_dnf(params: Mapping[str, object], section: DnfSection) -> CheckResult:
                     notice=f"Security packages: {section.security_packages_list}",
                 )
 
-    # Handle security-update edge states
     if section.security_packages == -2:
         yield Result(state=State.OK, notice="Security update check not available")
         yield Metric(name="security_updates", value=0)
     elif section.security_packages == -1:
         yield Result(state=State.UNKNOWN, summary="Security update check failed")
 
-    # --- Last update timestamp -------------------------------------------
-    if section.last_update_timestamp >= 0:
-        threshold_days: int = int(params.get("last_update_time_diff", 60))
-        threshold_seconds = threshold_days * 86400
-        age = int(time()) - section.last_update_timestamp
 
-        if age < threshold_seconds:
-            yield Result(
-                state=State.OK,
-                summary=f"Last update: {render.datetime(section.last_update_timestamp)}",
-            )
-        elif section.packages == 0:
-            yield Result(
-                state=State.OK,
-                notice=(f"Last update was {render.datetime(section.last_update_timestamp)}, but no updates available"),
-            )
+def _check_last_update(params: Mapping[str, object], section: DnfSection) -> CheckResult:
+    """A missing or old last upgrade only matters while updates are pending."""
+    if section.last_update_timestamp < 0:
+        if section.packages == 0:
+            yield Result(state=State.OK, notice="No upgrade transaction found")
         else:
-            level = int(params.get("last_update_state", 1))
-            yield Result(
-                state=State(level),
-                summary=f"Last update too long ago: {render.datetime(section.last_update_timestamp)}",
-            )
-    else:
-        level = int(params.get("last_update_state", 1))
-        yield Result(state=State(level), summary="No timestamp for last update available")
+            yield Result(state=State(int(params.get("last_update_state", 1))), summary="No upgrade transaction found")
+        return
 
-    # --- Reboot required -------------------------------------------------
+    last_update = render.datetime(section.last_update_timestamp)
+    threshold_days = int(params.get("last_update_time_diff", 60))
+    if time() - section.last_update_timestamp < threshold_days * 86400:
+        yield Result(state=State.OK, summary=f"Last update: {last_update}")
+    elif section.packages == 0:
+        yield Result(state=State.OK, notice=f"Last update was {last_update}, but no updates available")
+    else:
+        yield Result(state=State(int(params.get("last_update_state", 1))), summary=f"Last update too long ago: {last_update}")
+
+
+def _check_metadata_age(params: Mapping[str, object], section: DnfSection) -> CheckResult:
+    """Package queries are cache-only, so stale metadata hides pending updates."""
+    if section.metadata_timestamp < 0:
+        return
+
+    age = max(time() - section.metadata_timestamp, 0)
+    max_age_days = int(params.get("metadata_max_age", 7))
+    if age < max_age_days * 86400:
+        yield Result(state=State.OK, notice=f"Repository metadata age: {render.timespan(age)}")
+    else:
+        yield Result(
+            state=State(int(params.get("metadata_age_state", 1))),
+            summary=(f"Repository metadata age: {render.timespan(age)} (more than {max_age_days} days, is the dnf-makecache/dnf5-makecache timer running?)"),
+        )
+
+
+def check_dnf(params: Mapping[str, object], section: DnfSection) -> CheckResult:
+    """Evaluate available DNF updates against configurable thresholds."""
+    if section.error_message:
+        yield Result(state=State.UNKNOWN, summary=section.error_message)
+        return
+
+    if section.packages < 0:
+        yield Result(state=State.UNKNOWN, summary="No package information available")
+        return
+
+    yield from _check_updates(params, section)
+    yield from _check_last_update(params, section)
+    yield from _check_metadata_age(params, section)
+
     if section.reboot_required:
-        level = int(params.get("reboot_req", 2))
-        yield Result(state=State(level), summary="Reboot required")
+        yield Result(state=State(int(params.get("reboot_req", 2))), summary="Reboot required")
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +234,8 @@ check_plugin_dnf = CheckPlugin(
         "security": ("fixed", (1, 1)),
         "last_update_time_diff": 60,
         "last_update_state": 1,  # WARN
+        "metadata_max_age": 7,
+        "metadata_age_state": 1,  # WARN
         "reboot_req": 2,  # CRIT
     },
     check_ruleset_name="dnf",

@@ -35,6 +35,8 @@ def default_params() -> Mapping[str, object]:
         "security": ("fixed", (1, 1)),
         "last_update_time_diff": 60,
         "last_update_state": 1,
+        "metadata_max_age": 7,
+        "metadata_age_state": 1,
         "reboot_req": 2,
     }
 
@@ -117,6 +119,18 @@ class TestParseDnf:
         ]
         result = parse_dnf(string_table)
         assert result.last_update_timestamp == -1
+
+    def test_parse_metadata_timestamp(self):
+        """Line 5 carries the newest repository metadata refresh."""
+        result = parse_dnf([["no"], ["0"], ["0"], ["1700000000"], ["1700050000"]])
+        assert result.metadata_timestamp == 1700050000
+
+    def test_parse_without_metadata_line(self):
+        """Output of older agent plugins (4 data lines) still parses."""
+        result = parse_dnf([["no"], ["3"], ["1", "openssl"], ["1700000000"]])
+        assert result.packages == 3
+        assert result.last_update_timestamp == 1700000000
+        assert result.metadata_timestamp == -1
 
     def test_parse_malformed_numbers(self):
         """Malformed numeric values should default gracefully."""
@@ -326,3 +340,73 @@ class TestCheckDnfWithMockedTime:
 
         summaries = [r.summary for r in results if hasattr(r, "summary")]
         assert any("too long ago" in s for s in summaries)
+
+
+class TestMissingLastUpdate:
+    """A missing last-update timestamp (-1) only alerts while updates are pending."""
+
+    def test_no_pending_updates_is_ok(self, default_params):
+        section = DnfSection(reboot_required=False, packages=0, security_packages=0, last_update_timestamp=-1)
+        results = [r for r in check_dnf(default_params, section) if isinstance(r, Result)]
+
+        assert all(r.state == State.OK for r in results)
+        assert any("No upgrade transaction found" in r.details for r in results)
+
+    def test_pending_updates_alert(self, default_params):
+        params = {**default_params, "normal": ("no_levels", None), "security": ("no_levels", None)}
+        section = DnfSection(reboot_required=False, packages=3, security_packages=0, last_update_timestamp=-1)
+        results = [r for r in check_dnf(params, section) if isinstance(r, Result)]
+
+        assert [r.summary for r in results if r.state == State.WARN] == ["No upgrade transaction found"]
+
+    def test_pending_updates_use_configured_state(self, default_params):
+        params = {**default_params, "normal": ("no_levels", None), "last_update_state": 2}
+        section = DnfSection(reboot_required=False, packages=3, security_packages=0, last_update_timestamp=-1)
+        results = [r for r in check_dnf(params, section) if isinstance(r, Result)]
+
+        assert any(r.state == State.CRIT and r.summary == "No upgrade transaction found" for r in results)
+
+
+class TestMetadataAge:
+    """Stale repository metadata (makecache timer not running) must not stay silent."""
+
+    @pytest.fixture(autouse=True)
+    def _now(self):
+        with patch("cmk_addons.plugins.dnf.agent_based.dnf.time", return_value=1700000000 + 30 * 86400):
+            yield
+
+    def _results(self, params, metadata_timestamp):
+        section = DnfSection(
+            reboot_required=False,
+            packages=0,
+            security_packages=0,
+            last_update_timestamp=1700000000,
+            metadata_timestamp=metadata_timestamp,
+        )
+        return [r for r in check_dnf(params, section) if isinstance(r, Result)]
+
+    def test_recent_metadata_is_ok(self, default_params):
+        results = self._results(default_params, 1700000000 + 29 * 86400)
+
+        assert all(r.state == State.OK for r in results)
+        assert any(r.details.startswith("Repository metadata age: 1 day") for r in results)
+
+    def test_old_metadata_warns_and_names_the_cause(self, default_params):
+        results = self._results(default_params, 1700000000 + 20 * 86400)
+
+        warn = [r for r in results if r.state == State.WARN]
+        assert len(warn) == 1
+        assert warn[0].summary.startswith("Repository metadata age: 10 days")
+        assert "makecache" in warn[0].summary
+
+    def test_thresholds_and_state_are_configurable(self, default_params):
+        params = {**default_params, "metadata_max_age": 14, "metadata_age_state": 2}
+
+        assert all(r.state == State.OK for r in self._results(params, 1700000000 + 20 * 86400))
+        assert any(r.state == State.CRIT for r in self._results(params, 1700000000 + 10 * 86400))
+
+    def test_unknown_metadata_age_is_not_reported(self, default_params):
+        results = self._results(default_params, -1)
+
+        assert all(r.state == State.OK for r in results)
+        assert not any("metadata" in r.details for r in results)

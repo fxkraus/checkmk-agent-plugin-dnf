@@ -35,6 +35,23 @@ available package updates on RPM-based Linux distributions.
 The agent plugin automatically detects the best available package manager
 (`dnf5` → `dnf` → `yum`).
 
+### Requirements
+
+The agent plugin never downloads repository metadata itself: all package
+queries run cache-only (`dnf -C`), so they never block on the network. The
+metadata cache must be kept current by the distribution's makecache timer,
+which is enabled by default:
+
+```bash
+systemctl status dnf-makecache.timer     # dnf 4 (RHEL/AlmaLinux/Rocky/Oracle 8-10)
+systemctl status dnf5-makecache.timer    # dnf5 (Fedora 41+)
+```
+
+If the timer is disabled or failing (for example after a proxy change or an
+expired subscription), the counts would silently go stale. The service
+therefore reports the age of the newest metadata refresh and goes WARN when
+it is older than 7 days (configurable).
+
 ---
 
 ## Features
@@ -47,7 +64,11 @@ The agent plugin automatically detects the best available package manager
 - **Reboot detection** — compares the running kernel against the highest
   installed kernel version to flag pending reboots.
 - **Last update age** — warns when the system has not been updated within a
-  configurable number of days.
+  configurable number of days, or when no upgrade transaction is recorded at
+  all, as long as updates are pending.
+- **Metadata age** — warns when the repository metadata has not been
+  refreshed for a configurable number of days (see
+  [Requirements](#requirements)).
 - **Never blocks the agent** — every agent run answers from a cache right away.
   When repo metadata or the installed packages change (repo `repomd.xml`, rpm
   database), a background run recomputes the result, capped at 5 minutes.
@@ -101,8 +122,10 @@ Copy the file tree under `lib/` into
 | Normal updates | WARN / CRIT thresholds on the number of pending updates | 1 / 10 |
 | Security updates | WARN / CRIT thresholds on the number of security updates | 1 / 1 |
 | Reboot required | Service state when a reboot is pending | CRIT |
-| Last update age | Days after which missing updates trigger an alert | 60 |
-| Last update state | Service state for the "too old" condition | WARN |
+| Last update age | Days after which missing updates trigger an alert; also applies when no upgrade transaction is found | 60 |
+| Last update state | Service state for the "too old" / "not found" condition (only while updates are pending) | WARN |
+| Maximum age of repository metadata | Days after which stale metadata (makecache timer not running) triggers an alert | 7 |
+| State when repository metadata is too old | Service state for the stale metadata condition | WARN |
 
 ### Agent Bakery
 

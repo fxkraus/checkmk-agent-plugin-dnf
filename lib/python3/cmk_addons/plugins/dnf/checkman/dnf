@@ -15,7 +15,13 @@ description:
  due to a kernel update.
 
  Thresholds for normal and security update counts as well as the maximum
- age of the last update can be configured via WATO rules.
+ age of the last update can be configured via WATO rules. A missing or old
+ last update only changes the state while updates are pending.
+
+ The agent plugin queries the local metadata cache only, which
+ {dnf-makecache.timer} or {dnf5-makecache.timer} keeps current. The check
+ goes {WARN} by default if the newest repository metadata refresh is older
+ than 7 days, because pending updates may then be missed.
 
  The check goes {CRIT} by default if a reboot is required after a kernel
  update. This state can be overridden via a WATO rule.
