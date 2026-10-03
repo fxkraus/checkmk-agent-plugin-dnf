@@ -50,10 +50,14 @@ The agent plugin automatically detects the best available package manager
   configurable number of days.
 - **Never blocks the agent** — every agent run answers from a cache right away.
   When repo metadata or the installed packages change (repo `repomd.xml`, rpm
-  database), a detached background run recomputes the result, capped at 5
-  minutes. The first run after installing reports "running in the background"
-  (UNKNOWN) until that refresh finishes. Hosts without `setsid`/`flock`
-  (util-linux) refresh inline, capped at 45 s. The cache directory
+  database), a background run recomputes the result, capped at 5 minutes.
+  On systemd hosts it runs in its own transient unit
+  (`systemd-run --unit=cmk-agent-dnf-refresh`), because Checkmk's
+  socket-activated `check-mk-agent@.service` kills every process left behind
+  when the agent exits; elsewhere it is detached with `setsid`. The first run
+  after installing reports "running in the background" (UNKNOWN) until that
+  refresh finishes. Hosts without `setsid`/`flock` (util-linux) refresh
+  inline, capped at 45 s. The cache directory
   (`$MK_VARDIR/cache`) must be owned by the agent user and must not be
   group- or world-writable; otherwise the plugin reports an error.
 - **WATO rules** — fully configurable thresholds via the Checkmk GUI.
@@ -172,6 +176,8 @@ tests/
   test_agent_dnf.bats            # Shell tests (BATS)
   fixtures/fake-pm               # Fake dnf5/dnf/yum used by the BATS tests
   fixtures/fake-rpm              # Fake rpm for the reboot detection tests
+  fixtures/fake-systemd-run      # Fake systemd-run for the refresh tests
+  systemd/test-socket-activated-agent.sh  # End-to-end test: real agent under systemd
 ```
 
 ---
@@ -370,6 +376,7 @@ make lint         # Run all pre-commit hooks (linters + secret scan)
 make secrets      # Scan the full git history for secrets
 make format       # Auto-format Python code
 make test         # Run all tests
+make test-systemd # End-to-end test with the real agent under systemd (Docker)
 make build        # Build the MKP package
 make clean        # Remove build artifacts
 ```
@@ -395,6 +402,17 @@ docker run --rm -v "$PWD:/code:ro" -w /code -e DNF_AGENT_TEST_ALLOW_UPGRADE=1 \
   fedora:42 bash -c 'dnf -y -q install bats && dnf -q makecache && bats tests/test_agent_dnf.bats'
 ```
 
+**End-to-end test under systemd:**
+
+The BATS containers have no systemd, so a separate test boots an
+`almalinux/9-init` container (privileged), installs the real Checkmk agent RPM
+from the Checkmk image, deploys the plugin to `plugins/` and queries the
+socket-activated agent until the background refresh has written its cache:
+
+```bash
+make test-systemd
+```
+
 CI runs this suite on AlmaLinux 8, 9 and 10 (dnf) and Fedora 42 (dnf5).
 
 **Python Unit Tests:**
@@ -416,7 +434,7 @@ Inside the devcontainer or a Checkmk site, `pytest tests/` works directly.
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | push to `main`, pull requests | pre-commit lint, gitleaks secret scan, BATS on AlmaLinux 8/9/10 and Fedora 42, pytest against Checkmk 2.5, MKP build |
+| `ci.yml` | push to `main`, pull requests | pre-commit lint, gitleaks secret scan, BATS on AlmaLinux 8/9/10 and Fedora 42, end-to-end test with the real agent under systemd, pytest against Checkmk 2.5, MKP build |
 | `release.yml` | tag `vX.Y.Z` (optionally `pN`, `iN`, `bN` suffix) on `main` | builds the MKP with a read-only token, then publishes a GitHub release (`iN`/`bN` as pre-release) with the base image digest |
 | `dependabot-auto-merge.yml` | Dependabot pull requests | enables auto-merge for minor/patch uv updates (public repository only) |
 
@@ -439,7 +457,7 @@ merge immediately, before CI has finished:
 1. **Settings → General → Allow auto-merge** enabled.
 2. A branch ruleset on `main` requiring the status checks `lint`, `secrets`,
    `bats (almalinux:8)`, `bats (almalinux:9)`, `bats (almalinux:10)`,
-   `bats (fedora:42)`, `pytest (Checkmk 2.5)` and `mkp`.
+   `bats (fedora:42)`, `systemd`, `pytest (Checkmk 2.5)` and `mkp`.
 
 ---
 

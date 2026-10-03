@@ -9,7 +9,7 @@
 #   - Settings → General → "Allow auto-merge" enabled
 #   - A branch ruleset on main requiring the CI checks (lint, secrets,
 #     bats (almalinux:8), bats (almalinux:9), bats (almalinux:10),
-#     bats (fedora:42), pytest (Checkmk 2.5), mkp) to pass before merging
+#     bats (fedora:42), systemd, pytest (Checkmk 2.5), mkp) to pass before merging
 name: Dependabot Auto-Merge
 
 on: pull_request

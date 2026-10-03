@@ -7,12 +7,13 @@
 #   make lint            Run all linters and the secret scan (pre-commit, same as CI)
 #   make secrets         Scan the full git history for secrets (gitleaks)
 #   make test            Run all tests
+#   make test-systemd    End-to-end test with the real agent under systemd
 #   make deploy-plugin   Symlink plugin into CMK site (devcontainer)
 #   make discover        Discover services on AlmaLinux host (devcontainer)
 #   make clean           Remove build artifacts
 
 .PHONY: help lint secrets format \
-        test test-shell test-python test-python-docker \
+        test test-shell test-python test-python-docker test-systemd \
         build clean \
         deploy-plugin discover redeploy
 
@@ -23,6 +24,9 @@ PYTHON := python3
 BUILD_ARGS := $(if $(HTTP_PROXY),--build-arg HTTP_PROXY=$(HTTP_PROXY) --build-arg http_proxy=$(HTTP_PROXY),) \
               $(if $(HTTPS_PROXY),--build-arg HTTPS_PROXY=$(HTTPS_PROXY) --build-arg https_proxy=$(HTTPS_PROXY),) \
               $(if $(NO_PROXY),--build-arg NO_PROXY=$(NO_PROXY) --build-arg no_proxy=$(NO_PROXY),)
+
+# Image that provides the Checkmk agent RPM for test-systemd
+CMK_IMAGE ?= docker.io/checkmk/check-mk-ultimatemt:2.5.0-latest
 
 # Devcontainer paths (only relevant inside the CheckMK devcontainer)
 WORKSPACE ?= /workspace
@@ -45,6 +49,7 @@ help:
 	@echo "    test-shell     Run BATS shell tests"
 	@echo "    test-python    Run pytest Python tests (inside a Checkmk site)"
 	@echo "    test-python-docker  Run pytest inside the Checkmk build image"
+	@echo "    test-systemd   End-to-end test: real agent RPM under systemd (Docker)"
 	@echo ""
 	@echo "  Building:"
 	@echo "    build          Build the MKP package (requires podman/docker)"
@@ -94,6 +99,14 @@ test-python-docker:
 	docker run --rm -v "$$PWD:/source:ro" -v "$$REQ_DIR/requirements-test.txt:/requirements-test.txt:ro" \
 		--entrypoint /source/tests/run-pytest.sh checkmk-dnf-build; \
 	rc=$$?; rm -rf "$$REQ_DIR"; exit $$rc
+
+test-systemd:
+	@echo "==> Running the agent end-to-end under systemd..."
+	RPM_DIR="$$(mktemp -d)" && \
+	docker run --rm --entrypoint bash $(CMK_IMAGE) -c \
+		'cat /omd/versions/default/share/check_mk/agents/check-mk-agent-*.noarch.rpm' > "$$RPM_DIR/agent.rpm" && \
+	tests/systemd/test-socket-activated-agent.sh "$$RPM_DIR/agent.rpm"; \
+	rc=$$?; rm -rf "$$RPM_DIR"; exit $$rc
 
 # =============================================================================
 # Building
