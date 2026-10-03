@@ -20,6 +20,6 @@ cd "${REPO_DIR}"
 export PYTHONPATH="${DEPS_DIR}:${REPO_DIR}/lib/python3"
 
 # Fail loudly instead of letting the test modules skip themselves
-"${PYTHON}" -c "import cmk.agent_based.v2, cmk.base.cee.plugins.bakery.bakery_api.v1, cmk_addons.plugins.dnf.agent_based.dnf"
+"${PYTHON}" -c "import cmk.agent_based.v2, cmk.base.cee.plugins.bakery.bakery_api.v1, cmk_addons.plugins.dnf.agent_based.dnf, cmk_addons.plugins.dnf.rulesets.ruleset_dnf_bakery"
 
 "${PYTHON}" -m pytest -p no:cacheprovider "$@" tests/

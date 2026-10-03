@@ -12,6 +12,7 @@ from cmk.rulesets.v1.form_specs import (
     LevelDirection,
     ServiceState,
     SimpleLevels,
+    validators,
 )
 from cmk.rulesets.v1.rule_specs import CheckParameters, HostCondition, Topic
 
@@ -54,6 +55,7 @@ def _parameter_form_dnf() -> Dictionary:
                     help_text=Help("If no update has been applied within this many days and updates are available, the service state changes."),
                     unit_symbol="days",
                     prefill=DefaultValue(60),
+                    custom_validate=(validators.NumberInRange(min_value=1),),
                 ),
                 required=False,
             ),

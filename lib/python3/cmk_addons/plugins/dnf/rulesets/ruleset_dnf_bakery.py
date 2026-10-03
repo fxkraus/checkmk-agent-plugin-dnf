@@ -9,27 +9,36 @@ from cmk.rulesets.v1 import Help, Title
 from cmk.rulesets.v1.form_specs import (
     CascadingSingleChoice,
     CascadingSingleChoiceElement,
+    DefaultValue,
     DictElement,
     Dictionary,
     FixedValue,
     TimeMagnitude,
     TimeSpan,
+    validators,
 )
 from cmk.rulesets.v1.rule_specs import AgentConfig, Topic
 
+MIN_INTERVAL = 60.0
+
 
 def _migrate_legacy_config(value: object) -> Mapping[str, object]:
-    """Migrate old-format config (``{"interval": <int>}``) to the current cascading-choice format."""
-    if value is None:
-        return {"deploy": "nointerval"}
+    """Migrate legacy rule values to the cascading ``deploy`` choice.
+
+    Legacy rules were ``{"interval": <seconds>}`` or ``{}`` (no interval, run
+    synchronously). Earlier versions of this migration stored the invalid
+    plain string ``"nointerval"``.
+    """
     if not isinstance(value, Mapping):
-        return {"deploy": "nointerval"}
+        return {"deploy": ("nointerval", None)}
     if "deploy" in value:
-        return value  # already migrated
+        if value["deploy"] == "nointerval":
+            return {"deploy": ("nointerval", None)}
+        return value
     interval = value.get("interval")
-    if interval is not None and interval >= 0:
-        return {"deploy": ("interval", float(interval))}
-    return {"deploy": ("interval", 3600.0)}
+    if interval is None or interval <= 0:
+        return {"deploy": ("sync", None)}
+    return {"deploy": ("interval", max(float(interval), MIN_INTERVAL))}
 
 
 def _parameter_form_dnf_bakery() -> Dictionary:
@@ -42,7 +51,10 @@ def _parameter_form_dnf_bakery() -> Dictionary:
                 required=True,
                 parameter_form=CascadingSingleChoice(
                     title=Title("Deployment options"),
-                    help_text=Help("Choose whether to deploy the plugin and at what interval it should run."),
+                    help_text=Help(
+                        "Choose whether to deploy the plugin and how it runs. With an interval, the agent runs the plugin "
+                        "asynchronously and caches its output. Without an interval, the plugin runs on every agent call."
+                    ),
                     elements=[
                         CascadingSingleChoiceElement(
                             name="interval",
@@ -56,7 +68,14 @@ def _parameter_form_dnf_bakery() -> Dictionary:
                                     TimeMagnitude.HOUR,
                                     TimeMagnitude.DAY,
                                 ],
+                                prefill=DefaultValue(3600.0),
+                                custom_validate=(validators.NumberInRange(min_value=MIN_INTERVAL),),
                             ),
+                        ),
+                        CascadingSingleChoiceElement(
+                            name="sync",
+                            title=Title("Deploy without interval (run on every agent call)"),
+                            parameter_form=FixedValue(value=None),
                         ),
                         CascadingSingleChoiceElement(
                             name="nointerval",

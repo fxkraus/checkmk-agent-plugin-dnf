@@ -14,33 +14,16 @@ from .bakery_api.v1 import OS, FileGenerator, Plugin, register
 
 
 def get_dnf_files(conf: Any) -> FileGenerator:
-    """Yield the agent plugin file for deployment via the Agent Bakery."""
-    deploy = conf.get("deploy")
-    if deploy is None:
-        return
+    """Yield the agent plugin file for deployment via the Agent Bakery.
 
-    # Handle the cascading single-choice structure:
-    #   ("interval", <float seconds>)  -> deploy with interval
-    #   "nointerval"                    -> do not deploy
-    if isinstance(deploy, str) and deploy == "nointerval":
-        return
-    if isinstance(deploy, tuple):
-        choice, value = deploy
-        if choice == "nointerval":
-            return
-        if choice == "interval" and value is not None:
-            yield Plugin(
-                base_os=OS.LINUX,
-                source=Path("dnf"),
-                interval=int(value),
-            )
-            return
-
-    # Fallback: deploy without caching interval
-    yield Plugin(
-        base_os=OS.LINUX,
-        source=Path("dnf"),
-    )
+    ``conf["deploy"]`` is the ruleset's cascading choice: ``("interval",
+    <seconds>)``, ``("sync", None)`` or ``("nointerval", None)`` (do not deploy).
+    """
+    match conf.get("deploy"):
+        case ("interval", interval):
+            yield Plugin(base_os=OS.LINUX, source=Path("dnf"), interval=round(interval))
+        case ("sync", _):
+            yield Plugin(base_os=OS.LINUX, source=Path("dnf"))
 
 
 register.bakery_plugin(

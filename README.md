@@ -57,8 +57,8 @@ The agent plugin automatically detects the best available package manager
   (`$MK_VARDIR/cache`) must be owned by the agent user and must not be
   group- or world-writable; otherwise the plugin reports an error.
 - **WATO rules** — fully configurable thresholds via the Checkmk GUI.
-- **Agent Bakery** — deploy the agent plugin automatically, with an optional
-  async execution interval.
+- **Agent Bakery** — deploy the agent plugin automatically, either on every
+  agent call or asynchronously at an interval.
 - **Graphing** — emits `normal_updates` and `security_updates` metrics,
   rendered by Checkmk 2.5's built-in update graphs and perfometer.
 
@@ -102,12 +102,24 @@ Copy the file tree under `lib/` into
 
 ### Agent Bakery
 
-**Setup → Agents → Windows, Linux, Solaris, AIX → Agent rules → DNF Update Check (Linux)**
+**Setup → Agents → Windows, Linux, Solaris, AIX → Agent rules → DNF update check plugin**
 
-Deploy the agent plugin to hosts via the Agent Bakery.
-Optionally configure an asynchronous execution interval (in seconds) so the
-plugin runs in the background at a fixed cadence rather than on every agent
-call.
+Deploy the agent plugin to hosts via the Agent Bakery. The rule offers three
+choices:
+
+| Choice | Behaviour |
+|---|---|
+| Deploy with execution interval | The agent runs the plugin asynchronously at this interval (at least 60 s) and caches its output |
+| Deploy without interval | The plugin runs on every agent call |
+| Do not deploy the plugin | The plugin is not added to the agent package |
+
+Rules from older versions are migrated on upgrade: a rule without an interval
+becomes "Deploy without interval", and intervals below 60 s are raised to 60 s.
+
+| Parameter | Valid range |
+|---|---|
+| Execution interval | ≥ 60 s |
+| Last update age (check parameter) | ≥ 1 day |
 
 ---
 
@@ -154,7 +166,9 @@ build/
   tasks.json                     # VS Code task definitions
 tests/
   run-pytest.sh                  # Runs pytest with the Checkmk interpreter
-  test_check_dnf.py              # Python unit tests (pytest)
+  test_check_dnf.py              # Check plugin unit tests (pytest)
+  test_rulesets_dnf.py           # Ruleset migration and validation tests (pytest)
+  test_bakery_dnf.py             # Bakery plugin tests (pytest)
   test_agent_dnf.bats            # Shell tests (BATS)
   fixtures/fake-pm               # Fake dnf5/dnf/yum used by the BATS tests
   fixtures/fake-rpm              # Fake rpm for the reboot detection tests
