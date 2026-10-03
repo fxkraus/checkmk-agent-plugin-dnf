@@ -212,7 +212,7 @@ build/
   workflows/
     ci.yml                       # Lint, secret scan, tests and MKP build
     release.yml                  # Build and publish the MKP on version tags
-    dependabot-auto-merge.yml    # Auto-merge minor/patch uv + pre-commit Dependabot PRs
+    dependabot-auto-merge.yml    # Auto-merge minor/patch uv Dependabot PRs
 .devcontainer/
   docker-compose.yml             # Multi-container dev environment
   checkmk/Dockerfile             # Checkmk 2.5 Ultimate MT dev container
@@ -345,6 +345,12 @@ shared Docker network:
 - **Web UI:** `http://localhost:5000/cmk/`
 - **Login:** `cmkadmin` / `cmk`
 
+> [!WARNING]
+> The devcontainer is for local development only. It uses well-known
+> credentials, gives the `cmk` user passwordless `sudo`, downloads the agent
+> over plain HTTP and registers it with `--trust-cert`. Its ports are bound to
+> `127.0.0.1`; never expose them or reuse this setup elsewhere.
+
 **Makefile DevContainer targets** (run inside the devcontainer):
 
 ```bash
@@ -447,6 +453,8 @@ docker run --rm -v "$PWD:/code:ro" -w /code -e DNF_AGENT_TEST_ALLOW_UPGRADE=1 \
   fedora:42 bash -c 'dnf -y -q install bats && dnf -q makecache && bats tests/test_agent_dnf.bats'
 ```
 
+CI runs this suite on AlmaLinux 8, 9 and 10 (dnf) and Fedora 42 (dnf5).
+
 **End-to-end test under systemd:**
 
 The BATS containers have no systemd, so a separate test boots an
@@ -458,7 +466,7 @@ socket-activated agent until the background refresh has written its cache:
 make test-systemd
 ```
 
-CI runs this suite on AlmaLinux 8, 9 and 10 (dnf) and Fedora 42 (dnf5).
+CI runs it on AlmaLinux 9.
 
 **Python Unit Tests:**
 
@@ -494,7 +502,10 @@ updates, always need a manual review: the hooks run on every contributor's
 machine. Hooks are pinned to commit SHAs (`# frozen: vX.Y.Z` comments);
 refresh them with `pre-commit autoupdate --freeze`. The Checkmk images use the
 floating `2.5.0-latest` tag and are not managed by Dependabot (see the note in
-`.github/dependabot.yml`).
+`.github/dependabot.yml`). The distribution images the tests run in
+(`almalinux:8/9/10`, `fedora:42`, `almalinux/9-init`) float on purpose as
+well, so the tests always see current distribution packages; those jobs hold
+no secrets and only a read-only token.
 
 Auto-merge relies on two repository settings; without them, the workflow would
 merge immediately, before CI has finished:

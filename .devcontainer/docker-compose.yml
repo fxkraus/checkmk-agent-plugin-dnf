@@ -1,3 +1,6 @@
+# Local development only: well-known credentials, passwordless sudo for the
+# cmk user and an agent registered with --trust-cert. Never expose the ports
+# or reuse this setup outside a developer machine.
 services:
   checkmk:
     build:
