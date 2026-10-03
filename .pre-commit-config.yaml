@@ -1,17 +1,19 @@
 # Linters and secret scanning. CI runs exactly these hooks
 # (.github/workflows/ci.yml, job "lint"), so a clean local run means a clean
 # CI run. Setup: see "Pre-commit hooks" in README.md.
+# Hooks are pinned to commit SHAs (tags can be moved); refresh them with
+# `pre-commit autoupdate --freeze` and review the changes.
 minimum_pre_commit_version: "4.0.0"
 
 repos:
   # Secrets: blocks commits that contain credentials or private keys
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.1
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # frozen: v8.30.1
     hooks:
       - id: gitleaks
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
     hooks:
       - id: detect-private-key
       - id: check-added-large-files
@@ -27,13 +29,13 @@ repos:
         args: [--fix=lf]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.8
+    rev: 2eeb5678de71a00c0902cbda7105d328432f72cb  # frozen: v0.16.8
     hooks:
       - id: ruff-check
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.3.1
+    rev: 7ff8d35ae36a7d2b968f2f90b4c723e292e594ee  # frozen: v2.3.1
     hooks:
       - id: mypy
         # The plugin modules need the Checkmk libraries; they are covered by
@@ -41,18 +43,18 @@ repos:
         files: ^build/.*\.py$
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.11.0.1
+    rev: 745eface02aef23e168a8afb6b5737818efbea95  # frozen: v0.11.0.1
     hooks:
       - id: shellcheck
         # BATS files are not plain bash (e.g. `[ ]` is required for assertions)
         exclude: \.bats$
 
   - repo: https://github.com/AleksaC/hadolint-py
-    rev: v2.15.1
+    rev: 6e7504451511eaeb62a3e7f14d63b0296cbf86eb  # frozen: v2.15.1
     hooks:
       - id: hadolint
 
   - repo: https://github.com/Mateusz-Grzelinski/actionlint-py
-    rev: v1.7.12.25
+    rev: 805f85e558841bf4d852335e036b33d2b26be1cc  # frozen: v1.7.12.25
     hooks:
       - id: actionlint

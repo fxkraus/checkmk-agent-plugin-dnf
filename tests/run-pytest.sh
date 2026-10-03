@@ -2,19 +2,23 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Run the pytest suite with the Checkmk Python interpreter and libraries.
 # Intended to run inside the Checkmk image (see `make test-python-docker`).
+#
+# The Checkmk image has no uv, so the "test" dependency group is exported from
+# uv.lock beforehand, with hashes, and mounted at $TEST_REQUIREMENTS:
+#   uv export --frozen --only-group test --no-emit-project -o requirements-test.txt
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON="/omd/versions/default/bin/python3"
 DEPS_DIR="$(mktemp -d)"
+TEST_REQUIREMENTS="${TEST_REQUIREMENTS:-/requirements-test.txt}"
 
-# The "test" dependency group from pyproject.toml (kept current by Dependabot).
-# Read with tomllib because the Checkmk image has no uv.
-TEST_DEPS_LINES="$("${PYTHON}" -c \
-    'import sys, tomllib; print("\n".join(tomllib.load(open(sys.argv[1], "rb"))["dependency-groups"]["test"]))' \
-    "${REPO_DIR}/pyproject.toml")"
-mapfile -t TEST_DEPS <<< "${TEST_DEPS_LINES}"
-"${PYTHON}" -m pip install --quiet --disable-pip-version-check --target "${DEPS_DIR}" "${TEST_DEPS[@]}"
+if [[ ! -f "${TEST_REQUIREMENTS}" ]]; then
+    echo "ERROR: ${TEST_REQUIREMENTS} not found; export it from uv.lock (see the header of $0)" >&2
+    exit 1
+fi
+"${PYTHON}" -m pip install --quiet --disable-pip-version-check --require-hashes \
+    --target "${DEPS_DIR}" -r "${TEST_REQUIREMENTS}"
 
 cd "${REPO_DIR}"
 export PYTHONPATH="${DEPS_DIR}:${REPO_DIR}/lib/python3"

@@ -4,7 +4,7 @@
 # Runs inside the Checkmk Docker container.
 # See https://docs.checkmk.com/latest/en/mkps.html
 
-set -e
+set -euo pipefail
 
 SOURCE=/source
 CMK=/omd/sites/cmk
@@ -34,13 +34,17 @@ su - cmk -c "mkdir -p $CMK/tmp/check_mk && /omd/sites/cmk/bin/mkp template dnf >
 # Allow git operations on the mounted source directory
 git config --global --add safe.directory "$SOURCE"
 
-# Derive package version from git tags
+# Derive the package version: the tag of a tagged commit, otherwise the
+# number of commits, which only grows along main (needs the full history).
 TAG=$(git -C "$SOURCE" describe --exact-match --tags HEAD 2>/dev/null || true)
+SHALLOW=$(git -C "$SOURCE" rev-parse --is-shallow-repository)
 if [[ -n "$TAG" ]]; then
   VERSION="${TAG#v}"
+elif [[ "$SHALLOW" == "true" ]]; then
+  echo "ERROR: shallow clone; the untagged version needs the full history (fetch-depth: 0)" >&2
+  exit 1
 else
-  SHORT_SHA=$(git -C "$SOURCE" rev-parse --short=8 HEAD)
-  VERSION=$(printf '0.0.%d' "0x${SHORT_SHA}")
+  VERSION="0.0.$(git -C "$SOURCE" rev-list --count HEAD)"
 fi
 echo "Derived version: $VERSION"
 

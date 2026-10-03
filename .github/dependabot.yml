@@ -1,10 +1,12 @@
 # Dependabot configuration — weekly dependency updates.
 # https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
 #
-# Minor/patch updates are grouped into a single PR per ecosystem. uv and
-# pre-commit updates are auto-merged by the companion workflow
-# (.github/workflows/dependabot-auto-merge.yml) once the CI checks pass; Docker
-# and GitHub Actions updates and all major updates need a manual review.
+# Minor/patch updates are grouped into a single PR per ecosystem. uv updates
+# are auto-merged by the companion workflow
+# (.github/workflows/dependabot-auto-merge.yml) once the CI checks pass;
+# pre-commit hook, Docker and GitHub Actions updates and all major updates need
+# a manual review. pre-commit hooks are pinned to commit SHAs ("# frozen:"
+# comments), which Dependabot keeps updating.
 #
 # NOTE: Dependabot's Docker ecosystem only detects files matching
 # the Dockerfile* / *.Dockerfile naming pattern, and only FROM lines with a

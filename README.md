@@ -209,7 +209,12 @@ The resulting `dnf-<version>.mkp` file is written to the repository root.
 A version number is derived automatically:
 
 - If the current commit is tagged (e.g. `v1.2.3`), the tag is used.
-- Otherwise a numeric version is generated from the commit hash.
+- Otherwise the version is `0.0.<number of commits>`, which grows with every
+  commit on `main`. This needs the full history; the build fails in a shallow
+  clone.
+
+The build also fails if it cannot stamp the version into the agent plugin
+(the `CMK_VERSION="0.0.0"` placeholder in `agents/plugins/dnf`).
 
 > [!WARNING]
 > **The git tag must be a valid Checkmk version string** such as `1.2.3`,
@@ -222,13 +227,22 @@ A version number is derived automatically:
 
 ### Releasing
 
-Push a version tag; the **Release MKP** workflow builds the MKP and publishes a
-GitHub release (`iN`/`bN` tags as pre-releases):
+Push a version tag on a commit of `main`; the **Release MKP** workflow builds
+the MKP and publishes a GitHub release (`iN`/`bN` tags as pre-releases):
 
 ```bash
 git tag v1.2.3
 git push origin v1.2.3
 ```
+
+The workflow refuses tags on commits that are not on `main`. The build job
+runs with a read-only token; only the separate release job can write. The
+build uses the digest that `2.5.0-latest` resolves to at that moment, and the
+release notes record it.
+
+Anyone with write access can push a tag, so restrict who can create `v*` tags
+with a tag ruleset (**Settings → Rules → Rulesets → New tag ruleset**, target
+`v*`, restrict creations, bypass for maintainers).
 
 ---
 
@@ -392,6 +406,10 @@ build image (no local Checkmk required):
 make test-python-docker
 ```
 
+The image has no uv, so the target exports the `test` dependency group from
+`uv.lock` with hashes (`uv export`, needs uv on the host) and
+`tests/run-pytest.sh` installs it with `pip --require-hashes`.
+
 Inside the devcontainer or a Checkmk site, `pytest tests/` works directly.
 
 ### CI/CD
@@ -399,18 +417,21 @@ Inside the devcontainer or a Checkmk site, `pytest tests/` works directly.
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `ci.yml` | push to `main`, pull requests | pre-commit lint, gitleaks secret scan, BATS on AlmaLinux 8/9/10 and Fedora 42, pytest against Checkmk 2.5, MKP build |
-| `release.yml` | tag `vX.Y.Z` (optionally `pN`, `iN`, `bN` suffix) | builds the MKP and publishes a GitHub release (`iN`/`bN` as pre-release) |
-| `dependabot-auto-merge.yml` | Dependabot pull requests | enables auto-merge for minor/patch uv and pre-commit updates (public repository only) |
+| `release.yml` | tag `vX.Y.Z` (optionally `pN`, `iN`, `bN` suffix) on `main` | builds the MKP with a read-only token, then publishes a GitHub release (`iN`/`bN` as pre-release) with the base image digest |
+| `dependabot-auto-merge.yml` | Dependabot pull requests | enables auto-merge for minor/patch uv updates (public repository only) |
 
 Every commit on `main` produces an MKP, attached to the CI run as the
-artifact `dnf-mkp-<commit-sha>` (kept 90 days, version `0.0.<n>`
-derived from the commit hash). Tagged releases get a proper version.
+artifact `dnf-mkp-<commit-sha>` (kept 90 days, version `0.0.<n>` where `<n>`
+is the number of commits). Tagged releases get a proper version.
 
-Dependabot minor and patch updates of the uv and pre-commit ecosystems are
-merged automatically once all required checks pass. Docker image and GitHub
-Actions updates, and all major updates, always need a manual review. The
-Checkmk images use the floating `2.5.0-latest` tag and are not managed by
-Dependabot (see the note in `.github/dependabot.yml`).
+Dependabot minor and patch updates of the uv ecosystem (hash-locked in
+`uv.lock`) are merged automatically once all required checks pass.
+pre-commit hook, Docker image and GitHub Actions updates, and all major
+updates, always need a manual review: the hooks run on every contributor's
+machine. Hooks are pinned to commit SHAs (`# frozen: vX.Y.Z` comments);
+refresh them with `pre-commit autoupdate --freeze`. The Checkmk images use the
+floating `2.5.0-latest` tag and are not managed by Dependabot (see the note in
+`.github/dependabot.yml`).
 
 Auto-merge relies on two repository settings; without them, the workflow would
 merge immediately, before CI has finished:
