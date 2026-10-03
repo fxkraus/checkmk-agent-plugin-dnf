@@ -8,7 +8,8 @@
 # $FAKE_PM_DIR/<key>.rc (default 0). If the directory $FAKE_PM_DIR/<key>.d
 # exists, prints the file in it named after each further argument instead
 # (e.g. "history info 3 2" prints history-info.d/3 and history-info.d/2).
-# Each call's arguments are appended to $FAKE_PM_DIR/<key>.args.
+# Each call's arguments are appended to $FAKE_PM_DIR/<key>.args and its LC_ALL
+# to $FAKE_PM_DIR/<key>.lc_all.
 
 : "${FAKE_PM_DIR:?FAKE_PM_DIR must point at the fake responses}"
 
@@ -31,6 +32,7 @@ done
 
 key="$(IFS=-; echo "${words[*]}")${suffix}"
 echo "$*" >> "${FAKE_PM_DIR}/${key}.args"
+echo "${LC_ALL:-}" >> "${FAKE_PM_DIR}/${key}.lc_all"
 
 if [[ -d "${FAKE_PM_DIR}/${key}.d" ]]; then
     for arg in "${extra[@]}"; do

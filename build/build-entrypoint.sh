@@ -14,10 +14,11 @@ git config --global --add safe.directory "$SOURCE"
 
 # mkp packages every file under the site's local hierarchy, so stage only the
 # files git tracks (with their working-tree content), so untracked scratch
-# files or notes in lib/ or agents/ never reach the MKP.
+# files or notes in lib/ or agents/ never reach the MKP. A tracked file missing
+# from the working tree fails the build instead of being left out.
 STAGE=$(mktemp -d)
 git -C "$SOURCE" ls-files -z -- lib agents \
-  | tar -C "$SOURCE" --null --ignore-failed-read -T - -cf - \
+  | tar -C "$SOURCE" --null -T - -cf - \
   | tar -xf - -C "$STAGE"
 
 cd "$CMK/local"

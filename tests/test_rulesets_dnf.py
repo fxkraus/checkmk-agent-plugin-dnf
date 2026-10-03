@@ -29,6 +29,7 @@ MIGRATION_CASES = [
     pytest.param({}, ("sync", None), id="legacy-without-interval"),
     pytest.param({"interval": None}, ("sync", None), id="legacy-interval-none"),
     pytest.param({"interval": 0}, ("sync", None), id="legacy-interval-zero"),
+    pytest.param({"interval": "3600"}, ("sync", None), id="legacy-interval-not-a-number"),
     pytest.param({"interval": 30}, ("interval", 60.0), id="legacy-interval-below-minimum"),
     pytest.param({"interval": 7200}, ("interval", 7200.0), id="legacy-interval"),
     pytest.param({"deploy": "nointerval"}, ("nointerval", None), id="broken-earlier-migration"),

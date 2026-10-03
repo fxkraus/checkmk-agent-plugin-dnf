@@ -39,6 +39,11 @@ CMK_VERSION="0.0.0"
 # Disable globbing to prevent accidental pathname expansion
 set -o noglob
 
+# The parsers match English package-manager output. The refresh's transient
+# systemd unit doesn't inherit the agent's environment and gets the system
+# locale (LANG from /etc/locale.conf), so pin it here for every code path.
+export LC_ALL=C
+
 # --- Constants ---
 # Overall limit for one background refresh, in seconds
 readonly REFRESH_TIMEOUT=300
@@ -148,14 +153,23 @@ detect_package_manager() {
 
 # The newest kernel is the highest version, not the last one installed: a
 # fallback kernel installed later must not ask for a reboot.
+# The running kernel's package owns its vmlinuz under /lib/modules. The
+# /boot/config file is only a %ghost there and missing on some boot layouts,
+# so it serves as a fallback for kernels packaged differently.
 check_reboot_required() {
-    local config owners kernel_package running_kernel latest_kernel
+    local release file owners="" kernel_package running_kernel latest_kernel
 
-    config="/boot/config-$(uname -r)"
+    release=$(uname -r)
     # rpm prints "not owned by any package" to stdout, so check the exit code.
     # Several packages may own the file; the first one is enough.
-    if ! owners=$(rpm -qf --qf '%{NAME} %{VERSION}-%{RELEASE}\n' "$config" 2>/dev/null) \
-        || [[ -z "$owners" ]]; then
+    for file in "/lib/modules/${release}/vmlinuz" "/boot/config-${release}"; do
+        if owners=$(rpm -qf --qf '%{NAME} %{VERSION}-%{RELEASE}\n' "$file" 2>/dev/null) \
+            && [[ -n "$owners" ]]; then
+            break
+        fi
+        owners=""
+    done
+    if [[ -z "$owners" ]]; then
         echo "no"
         return
     fi
@@ -186,7 +200,7 @@ get_reboot_hint() {
         dnf|yum) cmd=("$PKG_MGR" -C --quiet "--disablerepo=*" "${DNF4_PLUGIN_ARGS[@]}" needs-restarting -r) ;;
     esac
 
-    output=$(LC_ALL=C "${cmd[@]}" 2>/dev/null) || rc=$?
+    output=$("${cmd[@]}" 2>/dev/null) || rc=$?
     if [[ "$rc" == 0 && "$output" == *"Reboot should not be necessary"* ]]; then
         echo "no"
     elif [[ "$rc" == 1 && "$output" == *"Reboot is required"* ]]; then
@@ -318,12 +332,13 @@ get_metadata_timestamp() {
 # --- Package state fingerprint ---
 # Changes when repo metadata is refreshed (repomd.xml per repo; dnf5 keeps its
 # cache in /var/cache/libdnf5), packages are installed or removed (rpmdb,
-# including plain rpm -U), the versionlock list changes or the host reboots
-# (boot ID, for the reboot hint). Solver caches (*.solv) are left out because
-# dnf rewrites them during read-only queries.
+# including plain rpm -U), the versionlock list or the package manager
+# configuration (excludes, repos enabled or disabled, variables) changes or
+# the host reboots (boot ID, for the reboot hint). Solver caches (*.solv) are
+# left out because dnf rewrites them during read-only queries.
 
 get_pkg_state_fingerprint() {
-    local repo_metadata rpmdb versionlock boot_id
+    local repo_metadata rpmdb versionlock config boot_id
     repo_metadata=$(find /var/cache/dnf /var/cache/yum /var/cache/libdnf5 \
         -name repomd.xml -printf '%p %T@ %s\n' 2>/dev/null) || true
     rpmdb=$(find /var/lib/rpm /usr/lib/sysimage/rpm -maxdepth 1 \
@@ -331,8 +346,12 @@ get_pkg_state_fingerprint() {
         -printf '%p %T@ %s\n' 2>/dev/null) || true
     versionlock=$(find /etc/dnf/plugins/versionlock.list /etc/yum/pluginconf.d/versionlock.list \
         /etc/dnf/versionlock.toml -maxdepth 0 -printf '%p %T@ %s\n' 2>/dev/null) || true
+    # Directories are listed too, so removing a file inside them counts
+    config=$(find /etc/dnf/dnf.conf /etc/yum.conf /etc/dnf/vars /etc/yum.repos.d \
+        /etc/distro.repos.d /etc/dnf/libdnf5.conf.d /etc/dnf/repos.override.d \
+        -maxdepth 1 -printf '%p %T@ %s\n' 2>/dev/null) || true
     boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null) || true
-    sort <<< "${repo_metadata}"$'\n'"${rpmdb}"$'\n'"${versionlock}"$'\n'"boot_id ${boot_id}"
+    sort <<< "${repo_metadata}"$'\n'"${rpmdb}"$'\n'"${versionlock}"$'\n'"${config}"$'\n'"boot_id ${boot_id}"
 }
 
 # --- Refresh the cached result (runs detached via --refresh) ---
@@ -421,9 +440,9 @@ start_refresh() {
     fi
 
     if command -v setsid >/dev/null 2>&1 && command -v flock >/dev/null 2>&1; then
-        setsid timeout "${REFRESH_TIMEOUT}s" bash "$self" --refresh </dev/null >/dev/null 2>&1 &
+        setsid timeout "${REFRESH_TIMEOUT}s" "$BASH" "$self" --refresh </dev/null >/dev/null 2>&1 &
     else
-        timeout "${INLINE_REFRESH_TIMEOUT}s" bash "$self" --refresh </dev/null >/dev/null 2>&1 || true
+        timeout "${INLINE_REFRESH_TIMEOUT}s" "$BASH" "$self" --refresh </dev/null >/dev/null 2>&1 || true
     fi
 }
 
