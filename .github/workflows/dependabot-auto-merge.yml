@@ -1,7 +1,8 @@
-# Enable auto-merge for Dependabot minor and patch updates of the uv and
-# pre-commit ecosystems. GitHub merges the PR only after all required status
-# checks (CI workflow) have passed. Docker and GitHub Actions updates and all
-# major updates are left open for manual review.
+# Enable auto-merge for Dependabot minor and patch updates of the uv ecosystem
+# (hash-locked in uv.lock). GitHub merges the PR only after all required status
+# checks (CI workflow) have passed. pre-commit hook, Docker and GitHub Actions
+# updates and all major updates are left open for manual review: hooks run on
+# every contributor's machine, so a compromised release must not land unseen.
 #
 # Repository prerequisites (without them `gh pr merge --auto` merges at once,
 # before CI has finished):
@@ -31,7 +32,7 @@ jobs:
 
       - name: Enable auto-merge for minor and patch updates
         if: >-
-          contains(fromJSON('["uv", "pre_commit"]'), steps.metadata.outputs.package-ecosystem) &&
+          steps.metadata.outputs.package-ecosystem == 'uv' &&
           (steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
            steps.metadata.outputs.update-type == 'version-update:semver-patch')
         run: gh pr merge --auto --squash "$PR_URL"

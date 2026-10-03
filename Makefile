@@ -89,7 +89,11 @@ test-python:
 test-python-docker:
 	@echo "==> Running pytest inside the Checkmk build image..."
 	docker build $(BUILD_ARGS) -t checkmk-dnf-build -f build/Dockerfile .
-	docker run --rm -v "$$PWD:/source:ro" --entrypoint /source/tests/run-pytest.sh checkmk-dnf-build
+	REQ_DIR="$$(mktemp -d)" && \
+	uv export --quiet --frozen --only-group test --no-emit-project -o "$$REQ_DIR/requirements-test.txt" && \
+	docker run --rm -v "$$PWD:/source:ro" -v "$$REQ_DIR/requirements-test.txt:/requirements-test.txt:ro" \
+		--entrypoint /source/tests/run-pytest.sh checkmk-dnf-build; \
+	rc=$$?; rm -rf "$$REQ_DIR"; exit $$rc
 
 # =============================================================================
 # Building

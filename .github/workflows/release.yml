@@ -2,6 +2,9 @@
 # Tags must be valid Checkmk versions: v1.2.3, v1.2.3p1 (patch), v1.2.3i1
 # (innovation) or v1.2.3b1 (beta). The build rejects anything else, e.g.
 # v1.2.3-alpha.1, which would crash the Checkmk server on install.
+#
+# The build job only gets a read-only token and fails unless the tagged commit
+# is on main. Only the release job, which runs no build code, may write.
 name: Release MKP
 
 on:
@@ -9,45 +12,86 @@ on:
     tags:
       - "v[0-9]*"
 
-permissions:
-  contents: write   # needed to create GitHub releases and upload assets
+permissions: {}
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build & Release MKP
+  build:
+    name: Build MKP
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      base-image: ${{ steps.base.outputs.image }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          fetch-depth: 0          # full history so git describe/tags work
+          fetch-depth: 0          # full history: main ancestry check and version
+          persist-credentials: false
+
+      - name: Verify that the tagged commit is on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME points to $GITHUB_SHA, which is not on main"
+            exit 1
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+
+      # Build from the digest the floating tag points to right now, so the
+      # release records exactly which Checkmk image packaged it.
+      - name: Resolve the Checkmk base image digest
+        id: base
+        env:
+          IMAGE: docker.io/checkmk/check-mk-ultimatemt:2.5.0-latest
+        run: |
+          digest=$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}')
+          echo "Base image: ${IMAGE%:*}@${digest} ($IMAGE)"
+          echo "image=${IMAGE%:*}@${digest}" >> "$GITHUB_OUTPUT"
 
       - name: Build MKP build image (cached)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
           file: build/Dockerfile
+          build-args: CMK_IMAGE=${{ steps.base.outputs.image }}
           tags: checkmk-dnf-build:latest
           load: true
-          pull: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Run MKP packaging
         run: docker run --rm -v "$PWD:/source" checkmk-dnf-build:latest
 
+      - name: Upload MKP
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: mkp
+          path: "*.mkp"
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the GitHub release and upload the MKP
+    steps:
+      - name: Download MKP
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: mkp
+
       - name: Determine pre-release flag
         id: meta
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          if [[ "$TAG" =~ [ib][0-9]+$ ]]; then
+          if [[ "$GITHUB_REF_NAME" =~ [ib][0-9]+$ ]]; then
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
@@ -59,5 +103,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           prerelease: ${{ steps.meta.outputs.prerelease }}
+          # Prepended to the generated release notes
+          body: "Built with the Checkmk image `${{ needs.build.outputs.base-image }}`."
           generate_release_notes: true
           files: "*.mkp"

@@ -9,6 +9,7 @@ from pathlib import Path
 from pprint import pformat
 
 CMK_AGENT_PATH = Path("/omd/sites/cmk/local/share/check_mk/agents/plugins/dnf")
+VERSION_PLACEHOLDER = 'CMK_VERSION="0.0.0"'
 
 PACKAGE_METADATA = {
     "author": "Felix Kraus (based on the original plugin by Henri Wahl)",
@@ -36,14 +37,22 @@ def update_manifest(manifest_path: Path, version: str) -> None:
 
 
 def stamp_agent_version(version: str) -> None:
-    """Replace the placeholder version in the deployed agent plugin."""
-    if not CMK_AGENT_PATH.exists():
-        print(f"WARNING: Agent plugin not found at {CMK_AGENT_PATH}")
-        return
+    """Replace the placeholder version in the deployed agent plugin.
+
+    Exits if the plugin or the placeholder is missing, so the MKP never
+    silently ships an agent plugin that reports version 0.0.0.
+    """
+    if not CMK_AGENT_PATH.is_file():
+        print(f"ERROR: Agent plugin not found at {CMK_AGENT_PATH}")
+        sys.exit(1)
 
     content = CMK_AGENT_PATH.read_text()
+    if VERSION_PLACEHOLDER not in content:
+        print(f"ERROR: {VERSION_PLACEHOLDER} not found in {CMK_AGENT_PATH}")
+        sys.exit(1)
+
     CMK_AGENT_PATH.write_text(
-        content.replace('CMK_VERSION="0.0.0"', f'CMK_VERSION="{version}"')
+        content.replace(VERSION_PLACEHOLDER, f'CMK_VERSION="{version}"')
     )
     print(f"Agent plugin stamped with version {version}")
 
