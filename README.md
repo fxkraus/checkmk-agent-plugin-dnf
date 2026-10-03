@@ -79,8 +79,10 @@ it is older than 7 days (configurable).
   after installing reports "running in the background" (UNKNOWN) until that
   refresh finishes. Hosts without `setsid`/`flock` (util-linux) refresh
   inline, capped at 45 s. The cache directory
-  (`$MK_VARDIR/cache`) must be owned by the agent user and must not be
-  group- or world-writable; otherwise the plugin reports an error.
+  (`$MK_VARDIR/cache`) must be owned by the agent user, `$MK_VARDIR` by the
+  agent user or root, and neither may be group- or world-writable; otherwise
+  the plugin reports an error. Directories the plugin creates itself get mode
+  0755 regardless of the umask.
 - **WATO rules** — fully configurable thresholds via the Checkmk GUI.
 - **Agent Bakery** — deploy the agent plugin automatically, either on every
   agent call or asynchronously at an interval.

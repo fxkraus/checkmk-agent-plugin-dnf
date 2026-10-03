@@ -66,9 +66,18 @@ fi
 # --- Cache directory and file paths ---
 readonly CACHE_DIR="${MK_VARDIR}/cache"
 
-# Ensure cache directory exists and is usable
-if ! mkdir -p "${CACHE_DIR}"; then
+# Ensure cache directory exists and is usable. umask 022 keeps any directory
+# created here from failing the permission checks below.
+if ! (umask 022 && mkdir -p "${CACHE_DIR}"); then
     die "Unable to create cache directory: ${CACHE_DIR}"
+fi
+
+# Whoever can write to MK_VARDIR could swap the cache directory for a symlink
+# after it has been checked, so it must belong to the agent's user or root.
+read -r vardir_uid vardir_mode < <(stat -L -c '%u %a' "${MK_VARDIR}" 2>/dev/null) || true
+if [[ "${vardir_uid:-}" != "${EUID}" && "${vardir_uid:-}" != 0 ]] \
+    || (( 8#${vardir_mode:-777} & 8#022 )); then
+    die "MK_VARDIR must be owned by UID ${EUID} or root and not group- or world-writable: ${MK_VARDIR}"
 fi
 
 # Only the agent's own user may write to the cache directory; otherwise

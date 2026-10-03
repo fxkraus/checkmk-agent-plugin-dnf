@@ -17,8 +17,9 @@ setup() {
     # Set up mock MK_VARDIR
     export MK_VARDIR="${TEST_TEMP_DIR}/mk_vardir"
     mkdir -p "${MK_VARDIR}/cache"
-    # The agent refuses a group-writable cache dir (umask 002 is common)
-    chmod 755 "${MK_VARDIR}/cache"
+    # The agent refuses a group-writable MK_VARDIR or cache dir (umask 002 is
+    # common)
+    chmod 755 "${MK_VARDIR}" "${MK_VARDIR}/cache"
 
     # Path to the agent plugin
     AGENT_PLUGIN="${BATS_TEST_DIRNAME}/../agents/plugins/dnf"
@@ -594,6 +595,28 @@ Begin time     : 2026-09-27 10:48:33
     [ "$status" -eq 0 ]
     [[ "${lines[1]}" == ERROR:*writable* ]]
     [ ! -e "${RESULT_CACHE}" ]
+}
+
+@test "A group- or world-writable MK_VARDIR is refused" {
+    use_fake_pm dnf
+    chmod 775 "${MK_VARDIR}"
+    run agent
+    [ "$status" -eq 0 ]
+    [[ "${lines[1]}" == ERROR:*MK_VARDIR*writable* ]]
+    [ ! -e "${RESULT_CACHE}" ]
+}
+
+@test "A missing cache directory is created usable despite umask 002" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    rm -rf "${MK_VARDIR}"
+    umask 002
+    run agent
+    [ "$status" -eq 0 ]
+    [[ "${lines[1]}" != ERROR:*writable* ]]
+    [ "$(stat -c %a "${MK_VARDIR}")" = "755" ]
+    [ "$(stat -c %a "${MK_VARDIR}/cache")" = "755" ]
 }
 
 # =============================================================================
