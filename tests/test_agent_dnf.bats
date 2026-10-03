@@ -370,6 +370,23 @@ new-pkg.x86_64                     2-1.fc42       updates
     [ "${lines[4]}" = "$(date -d '2026-09-20 08:00' +%s)" ]
 }
 
+@test "dnf: upgrade words in the command line are not taken for an upgrade" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    fake_pm_reply history-list 0 \
+'ID     | Command line             | Date and time    | Action(s)      | Altered
+-------------------------------------------------------------------------------
+     4 | install a|b -x U         | 2026-09-28 09:00 | Install        |    1
+     3 | install Update-tool      | 2026-09-27 10:48 | Install        |    1
+     2 | upgrade                  | 2026-09-20 08:00 | Upgrade        |   25
+     1 |                          | 2026-04-26 07:47 | Install        |  126 EE
+'
+    run_agent_refreshed
+    [ "$status" -eq 0 ]
+    [ "${lines[4]}" = "$(date -d '2026-09-20 08:00' +%s)" ]
+}
+
 @test "dnf: history without upgrades yields -1" {
     use_fake_pm dnf
     fake_pm_reply check-update 0

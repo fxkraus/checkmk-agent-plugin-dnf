@@ -252,11 +252,11 @@ get_last_update_timestamp() {
             timestamp=$(get_last_upgrade_dnf5) || true
             ;;
         dnf|yum)
+            # Columns: ID | Command line | Date and time | Action(s) | Altered.
+            # Only the Action(s) column is matched, never the free-text command
+            # line, and columns count from the right in case it contains "|".
             timestamp=$("$PKG_MGR" -C --quiet "${DNF4_PLUGIN_ARGS[@]}" history list 2>/dev/null \
-                | awk '{if(NR>2)print}' \
-                | grep -E ' U | Upgrade| Update' \
-                | head -n1 \
-                | awk -F'|' '{print $3}' \
+                | awk -F'|' 'NR > 2 && NF >= 5 && $(NF-1) ~ /(^|[ ,])(U|Upgrade|Update)([ ,]|$)/ {print $(NF-2); exit}' \
                 | date -f - +"%s" 2>/dev/null) || true
             ;;
     esac
