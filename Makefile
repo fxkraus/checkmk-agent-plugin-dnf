@@ -13,7 +13,7 @@
 #   make clean           Remove build artifacts
 
 .PHONY: help lint secrets format \
-        test test-shell test-python test-python-docker test-systemd \
+        test test-shell test-python test-python-docker typecheck-docker test-systemd \
         build clean \
         deploy-plugin discover redeploy
 
@@ -49,6 +49,7 @@ help:
 	@echo "    test-shell     Run BATS shell tests"
 	@echo "    test-python    Run pytest Python tests (inside a Checkmk site)"
 	@echo "    test-python-docker  Run pytest inside the Checkmk build image"
+	@echo "    typecheck-docker    Run mypy on the plugin modules inside the Checkmk build image"
 	@echo "    test-systemd   End-to-end test: real agent RPM under systemd (Docker)"
 	@echo ""
 	@echo "  Building:"
@@ -98,6 +99,15 @@ test-python-docker:
 	uv export --quiet --frozen --only-group test --no-emit-project -o "$$REQ_DIR/requirements-test.txt" && \
 	docker run --rm -v "$$PWD:/source:ro" -v "$$REQ_DIR/requirements-test.txt:/requirements-test.txt:ro" \
 		--entrypoint /source/tests/run-pytest.sh checkmk-dnf-build; \
+	rc=$$?; rm -rf "$$REQ_DIR"; exit $$rc
+
+typecheck-docker:
+	@echo "==> Running mypy inside the Checkmk build image..."
+	docker build $(BUILD_ARGS) -t checkmk-dnf-build -f build/Dockerfile .
+	REQ_DIR="$$(mktemp -d)" && \
+	uv export --quiet --frozen --only-group test --no-emit-project -o "$$REQ_DIR/requirements-test.txt" && \
+	docker run --rm -v "$$PWD:/source:ro" -v "$$REQ_DIR/requirements-test.txt:/requirements-test.txt:ro" \
+		--entrypoint /source/tests/run-mypy.sh checkmk-dnf-build; \
 	rc=$$?; rm -rf "$$REQ_DIR"; exit $$rc
 
 test-systemd:

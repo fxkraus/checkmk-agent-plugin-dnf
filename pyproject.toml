@@ -8,15 +8,15 @@ version = "0.0.0"  # unused; releases are versioned by git tags
 requires-python = ">=3.13"
 
 [dependency-groups]
-# Installed into the Checkmk interpreter by tests/run-pytest.sh
-test = ["pytest==9.1.1"]
+# Installed into the Checkmk interpreter by tests/run-pytest.sh and
+# tests/run-mypy.sh
+test = ["pytest==9.1.1", "mypy==2.3.1"]
 # Used by the CI lint job
 lint = ["pre-commit==4.6.2"]
 dev = [
     { include-group = "test" },
     { include-group = "lint" },
     "ruff==0.16.9",
-    "mypy==2.3.1",
 ]
 
 [tool.uv]
