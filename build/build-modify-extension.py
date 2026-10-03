@@ -13,11 +13,7 @@ VERSION_PLACEHOLDER = 'CMK_VERSION="0.0.0"'
 
 PACKAGE_METADATA = {
     "author": "Felix Kraus (based on the original plugin by Henri Wahl)",
-    "description": (
-        "Checks for available package updates on RPM-based distributions "
-        "(RHEL 8-10, AlmaLinux, Rocky Linux, Oracle Linux, CentOS Stream) "
-        "via dnf5, dnf, or yum."
-    ),
+    "description": "Checks for available package updates on RPM-based distributions (RHEL 8-10, AlmaLinux, Rocky Linux, Oracle Linux, CentOS Stream) via dnf5, dnf, or yum.",
     "download_url": "https://github.com/fxkraus/checkmk-agent-plugin-dnf/releases",
     "title": "DNF Update Check",
     "version.min_required": "2.5.0",
@@ -51,9 +47,7 @@ def stamp_agent_version(version: str) -> None:
         print(f"ERROR: {VERSION_PLACEHOLDER} not found in {CMK_AGENT_PATH}")
         sys.exit(1)
 
-    CMK_AGENT_PATH.write_text(
-        content.replace(VERSION_PLACEHOLDER, f'CMK_VERSION="{version}"')
-    )
+    CMK_AGENT_PATH.write_text(content.replace(VERSION_PLACEHOLDER, f'CMK_VERSION="{version}"'))
     print(f"Agent plugin stamped with version {version}")
 
 
