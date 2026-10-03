@@ -28,8 +28,10 @@ description:
  background refresh has completed for 2 hours, because the counts may then be
  outdated.
 
- The check goes {CRIT} by default if a reboot is required after a kernel
- update. This state can be overridden via a WATO rule.
+ The check goes {CRIT} by default if a reboot is required: a newer kernel
+ than the running one is installed, or {needs-restarting -r} reports core
+ libraries or services (glibc, systemd, ...) updated since boot. The state,
+ and whether {needs-restarting} is used, can be configured via a WATO rule.
 
  The plugin must be deployed to the agent's {plugins} directory, either
  manually or through the Agent Bakery.

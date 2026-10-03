@@ -13,9 +13,11 @@ Example agent output:
     1626252300
     1626338700
     -1
+    yes glibc,systemd
 
-The last two lines (newest repository metadata refresh, start of the oldest
-unfinished background refresh) are missing from older agent plugins.
+The last three lines (newest repository metadata refresh, start of the oldest
+unfinished background refresh, needs-restarting reboot hint) are missing from
+older agent plugins.
 """
 #
 # Copyright 2015, Henri Wahl <h.wahl@ifw-dresden.de>
@@ -53,6 +55,7 @@ class DnfParams(TypedDict, total=False):
     normal: LevelsT[int]
     security: LevelsT[int]
     reboot_req: int
+    reboot_hint: bool
     last_update_time_diff: int
     last_update_state: int
     metadata_max_age: int
@@ -71,6 +74,8 @@ class DnfSection(NamedTuple):
     last_update_timestamp: int = -1
     metadata_timestamp: int = -1
     refresh_pending_since: int = -1
+    reboot_hint: bool | None = None
+    reboot_hint_packages: str | None = None
     error_message: str | None = None
 
 
@@ -97,6 +102,8 @@ def parse_dnf(string_table: Sequence[Sequence[str]]) -> DnfSection:
     last_update_timestamp = -1
     metadata_timestamp = -1
     refresh_pending_since = -1
+    reboot_hint: bool | None = None
+    reboot_hint_packages: str | None = None
 
     with contextlib.suppress(IndexError, ValueError):
         packages = int(string_table[1][0])
@@ -117,6 +124,11 @@ def parse_dnf(string_table: Sequence[Sequence[str]]) -> DnfSection:
     with contextlib.suppress(IndexError, ValueError):
         refresh_pending_since = int(string_table[5][0])
 
+    if len(string_table) > 6 and string_table[6][0] in ("yes", "no"):
+        reboot_hint = string_table[6][0] == "yes"
+        if reboot_hint and len(string_table[6]) > 1:
+            reboot_hint_packages = string_table[6][1]
+
     return DnfSection(
         reboot_required=reboot_required,
         packages=packages,
@@ -125,6 +137,8 @@ def parse_dnf(string_table: Sequence[Sequence[str]]) -> DnfSection:
         last_update_timestamp=last_update_timestamp,
         metadata_timestamp=metadata_timestamp,
         refresh_pending_since=refresh_pending_since,
+        reboot_hint=reboot_hint,
+        reboot_hint_packages=reboot_hint_packages,
     )
 
 
@@ -239,6 +253,16 @@ def _check_refresh_pending(params: DnfParams, section: DnfSection) -> CheckResul
         )
 
 
+def _check_reboot(params: DnfParams, section: DnfSection) -> CheckResult:
+    """A newer kernel, or core libraries and services updated since boot (needs-restarting)."""
+    state = State(int(params.get("reboot_req", 2)))
+    if section.reboot_required:
+        yield Result(state=state, summary="Reboot required", details="Reboot required: a newer kernel is installed")
+    elif section.reboot_hint and params.get("reboot_hint", True):
+        updated = section.reboot_hint_packages.replace(",", ", ") if section.reboot_hint_packages else "unknown packages"
+        yield Result(state=state, summary="Reboot required", details=f"Reboot required: updated since boot: {updated}")
+
+
 def check_dnf(params: DnfParams, section: DnfSection) -> CheckResult:
     """Evaluate available DNF updates against configurable thresholds."""
     if section.error_message:
@@ -254,8 +278,7 @@ def check_dnf(params: DnfParams, section: DnfSection) -> CheckResult:
     yield from _check_metadata_age(params, section)
     yield from _check_refresh_pending(params, section)
 
-    if section.reboot_required:
-        yield Result(state=State(int(params.get("reboot_req", 2))), summary="Reboot required")
+    yield from _check_reboot(params, section)
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +300,7 @@ check_plugin_dnf = CheckPlugin(
         "refresh_pending_max_age": 2,
         "refresh_pending_state": 1,  # WARN
         "reboot_req": 2,  # CRIT
+        "reboot_hint": True,
     },
     check_ruleset_name="dnf",
 )

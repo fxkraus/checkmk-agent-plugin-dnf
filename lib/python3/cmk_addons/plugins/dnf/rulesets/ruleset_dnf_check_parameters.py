@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Checkmk 2.5 ruleset for DNF update check parameters."""
 
-from cmk.rulesets.v1 import Help, Title
+from cmk.rulesets.v1 import Help, Label, Title
 from cmk.rulesets.v1.form_specs import (
+    BooleanChoice,
     DefaultValue,
     DictElement,
     Dictionary,
@@ -46,6 +47,19 @@ def _parameter_form_dnf() -> Dictionary:
                 parameter_form=ServiceState(
                     title=Title("State when a reboot is required"),
                     prefill=DefaultValue(ServiceState.CRIT),
+                ),
+                required=False,
+            ),
+            "reboot_hint": DictElement(
+                parameter_form=BooleanChoice(
+                    title=Title("Reboot detection beyond the kernel"),
+                    label=Label("Also require a reboot when core libraries or services were updated since boot"),
+                    help_text=Help(
+                        "Besides a newer kernel, use needs-restarting -r (dnf 4 plugins / dnf5) to detect updates of core "
+                        "packages such as glibc, systemd or openssl since the last boot. Hosts without it fall back to the "
+                        "kernel check."
+                    ),
+                    prefill=DefaultValue(True),
                 ),
                 required=False,
             ),

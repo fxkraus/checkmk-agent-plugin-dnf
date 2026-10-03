@@ -61,8 +61,11 @@ it is older than 7 days (configurable).
   (with an optional package list in the service details).
 - **Versionlock aware** — packages locked with `dnf versionlock` are not
   counted as pending updates, on dnf 4 (plugin) as on dnf5 (built in).
-- **Reboot detection** — compares the running kernel against the highest
-  installed kernel version to flag pending reboots.
+- **Reboot detection** — flags a pending reboot when a newer kernel than the
+  running one is installed, or when `needs-restarting -r` (dnf 4 plugins,
+  built into dnf5) reports core libraries or services (glibc, systemd,
+  openssl, …) updated since boot. The latter can be switched off; hosts
+  without `needs-restarting` fall back to the kernel check.
 - **Last update age** — warns when the system has not been updated within a
   configurable number of days, or when no upgrade transaction is recorded at
   all, as long as updates are pending.
@@ -133,6 +136,7 @@ Copy the file tree under `lib/` into
 | Normal updates | WARN / CRIT thresholds on the number of pending updates | 1 / 10 |
 | Security updates | WARN / CRIT thresholds on the number of security updates | 1 / 1 |
 | Reboot required | Service state when a reboot is pending | CRIT |
+| Reboot detection beyond the kernel | Also require a reboot for core libraries or services updated since boot (`needs-restarting -r`) | on |
 | Last update age | Days after which missing updates trigger an alert; also applies when no upgrade transaction is found | 60 |
 | Last update state | Service state for the "too old" / "not found" condition (only while updates are pending) | WARN |
 | Maximum age of repository metadata | Days after which stale metadata (makecache timer not running) triggers an alert | 7 |

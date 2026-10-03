@@ -40,6 +40,7 @@ def default_params() -> Mapping[str, object]:
         "refresh_pending_max_age": 2,
         "refresh_pending_state": 1,
         "reboot_req": 2,
+        "reboot_hint": True,
     }
 
 
@@ -143,6 +144,19 @@ class TestParseDnf:
         """Output of older agent plugins (5 data lines) still parses."""
         result = parse_dnf([["no"], ["0"], ["0"], ["1700000000"], ["1700050000"]])
         assert result.refresh_pending_since == -1
+
+    def test_parse_reboot_hint(self):
+        """Line 7 carries the needs-restarting reboot hint."""
+        rows = [["no"], ["0"], ["0"], ["1700000000"], ["1700050000"], ["-1"]]
+
+        def hint(string_table):
+            section = parse_dnf(string_table)
+            return section.reboot_hint, section.reboot_hint_packages
+
+        assert hint([*rows, ["yes", "glibc,systemd"]]) == (True, "glibc,systemd")
+        assert hint([*rows, ["no"]]) == (False, None)
+        assert hint([*rows, ["unknown"]]) == (None, None)
+        assert hint(rows) == (None, None)
 
     def test_parse_malformed_numbers(self):
         """Malformed numeric values should default gracefully."""
@@ -473,3 +487,46 @@ class TestRefreshPending:
 
         assert all(r.state == State.OK for r in self._results(params, self.NOW - 3 * 3600))
         assert any(r.state == State.CRIT for r in self._results(params, self.NOW - 5 * 3600))
+
+
+class TestRebootHint:
+    """needs-restarting covers core libraries and services besides the kernel."""
+
+    def _results(self, params, *, kernel=False, hint=None, packages=None):
+        section = DnfSection(
+            reboot_required=kernel,
+            packages=0,
+            security_packages=0,
+            last_update_timestamp=2000000000,
+            reboot_hint=hint,
+            reboot_hint_packages=packages,
+        )
+        return [r for r in check_dnf(params, section) if isinstance(r, Result)]
+
+    def test_updated_core_packages_require_a_reboot(self, default_params):
+        results = self._results(default_params, hint=True, packages="glibc,systemd")
+
+        crit = [r for r in results if r.state == State.CRIT]
+        assert len(crit) == 1
+        assert crit[0].summary == "Reboot required"
+        assert crit[0].details == "Reboot required: updated since boot: glibc, systemd"
+
+    def test_newer_kernel_takes_precedence(self, default_params):
+        results = self._results(default_params, kernel=True, hint=True, packages="kernel-core")
+
+        assert [r.details for r in results if r.state == State.CRIT] == ["Reboot required: a newer kernel is installed"]
+
+    @pytest.mark.parametrize("hint", [False, None])
+    def test_no_or_unknown_hint_is_ok(self, default_params, hint):
+        assert all(r.state == State.OK for r in self._results(default_params, hint=hint))
+
+    def test_hint_can_be_disabled(self, default_params):
+        params = {**default_params, "reboot_hint": False}
+
+        assert all(r.state == State.OK for r in self._results(params, hint=True, packages="glibc"))
+        assert any(r.state == State.CRIT for r in self._results(params, kernel=True))
+
+    def test_uses_the_configured_state(self, default_params):
+        params = {**default_params, "reboot_req": 1}
+
+        assert any(r.state == State.WARN and r.summary == "Reboot required" for r in self._results(params, hint=True, packages="glibc"))

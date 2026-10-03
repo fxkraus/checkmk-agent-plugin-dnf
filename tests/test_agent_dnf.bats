@@ -165,8 +165,8 @@ teardown() {
     run_agent_refreshed
     [ "$status" -eq 0 ]
 
-    # Section header + 6 data lines
-    [ "${#lines[@]}" -eq 7 ]
+    # Section header + 7 data lines
+    [ "${#lines[@]}" -eq 8 ]
 }
 
 @test "Reboot required line is yes or no" {
@@ -235,7 +235,8 @@ teardown() {
 # =============================================================================
 # Package manager output parsing (fake package manager, runs anywhere on Linux)
 # Output lines: [0] header, [1] reboot, [2] updates, [3] security,
-# [4] last update, [5] metadata refresh, [6] refresh pending since
+# [4] last update, [5] metadata refresh, [6] refresh pending since,
+# [7] reboot hint
 # =============================================================================
 
 @test "dnf5: update count ignores wrapped and obsoleting lines" {
@@ -420,7 +421,7 @@ new-pkg.x86_64                     2-1.fc42       updates
 
     wait_for_file "${RESULT_CACHE}"
     run agent
-    [ "${#lines[@]}" -eq 7 ]
+    [ "${#lines[@]}" -eq 8 ]
     [ "${lines[2]}" = "1" ]
 }
 
@@ -450,7 +451,7 @@ new-pkg.x86_64                     2-1.fc42       updates
 
     run agent
     [ "$status" -eq 0 ]
-    [ "${#lines[@]}" -eq 7 ]
+    [ "${#lines[@]}" -eq 8 ]
     [ "${lines[2]}" = "0" ]
 }
 
@@ -494,6 +495,70 @@ new-pkg.x86_64                     2-1.fc42       updates
     [ "${lines[2]}" = "0" ]
 }
 
+@test "needs-restarting: core packages updated since boot are reported" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    fake_pm_reply needs-restarting 1 'Core libraries or services have been updated since boot-up:
+  * glibc
+  * systemd
+
+Reboot is required to fully utilize these updates.
+More information: https://access.redhat.com/solutions/27943
+'
+    run_agent_refreshed
+    [ "$status" -eq 0 ]
+    [ "${lines[7]}" = "yes glibc,systemd" ]
+    # Reads the rpm database only: cache-only, every repository disabled
+    run cat "${FAKE_PM_DIR}/needs-restarting.args"
+    [[ "$output" == *"-C"* && "$output" == *"--disablerepo=*"* && "$output" == *"-r"* ]]
+}
+
+@test "needs-restarting: nothing updated since boot is reported as no" {
+    use_fake_pm dnf5
+    fake_pm_reply check-upgrade 0
+    fake_pm_reply check-upgrade-security 0
+    fake_pm_reply needs-restarting 0 'No core libraries or services have been updated since boot-up.
+Reboot should not be necessary.
+'
+    run_agent_refreshed
+    [ "$status" -eq 0 ]
+    [ "${lines[7]}" = "no" ]
+}
+
+@test "needs-restarting: a missing plugin is unknown, not a reboot" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    fake_pm_reply needs-restarting 1 'No such command: needs-restarting.
+'
+    run_agent_refreshed
+    [ "$status" -eq 0 ]
+    [ "${lines[7]}" = "unknown" ]
+}
+
+@test "needs-restarting: a result cache from an older version serves unknown" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    agent --refresh
+    printf '0\n0 \n-1\n' > "${RESULT_CACHE}"
+    run agent
+    [ "$status" -eq 0 ]
+    [ "${#lines[@]}" -eq 8 ]
+    [ "${lines[2]}" = "0" ]
+    [ "${lines[7]}" = "unknown" ]
+}
+
+@test "The fingerprint includes the boot ID, so a reboot refreshes the hint" {
+    [ -r /proc/sys/kernel/random/boot_id ] || skip "No boot ID available"
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    agent --refresh
+    grep -qx "boot_id $(cat /proc/sys/kernel/random/boot_id)" "${MK_VARDIR}/cache/dnf_pkg_state.cache"
+}
+
 @test "Legacy 4-line cache files are removed" {
     use_fake_pm dnf
     fake_pm_reply check-update 0
@@ -505,6 +570,16 @@ new-pkg.x86_64                     2-1.fc42       updates
     [ ! -e "${MK_VARDIR}/cache/yum_result.cache" ]
     [ ! -e "${MK_VARDIR}/cache/yum_uptime.cache" ]
     [ "${lines[2]}" = "0" ]
+}
+
+@test "Reboot hint is yes with packages, no or unknown (real package manager)" {
+    if ! command -v dnf &>/dev/null && ! command -v yum &>/dev/null; then
+        skip "No dnf or yum available"
+    fi
+
+    run_agent_refreshed
+    [ "$status" -eq 0 ]
+    [[ "${lines[7]}" =~ ^(yes\ [^[:space:]]*|no|unknown)$ ]]
 }
 
 @test "Metadata refresh line is a timestamp or -1" {

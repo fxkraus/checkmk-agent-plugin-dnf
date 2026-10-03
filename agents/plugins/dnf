@@ -7,19 +7,21 @@
 # Package managers: dnf (RHEL 8-10), dnf5 (Fedora 41+), yum (as dnf wrapper)
 #
 # Output format (<<<dnf>>> section):
-#   Line 1: Reboot required (yes/no)
+#   Line 1: Reboot required for a newer kernel (yes/no)
 #   Line 2: Number of available updates (-1 on error)
 #   Line 3: Number of security updates [-1 error, -2 unsupported] [comma-separated list]
 #   Line 4: Unix timestamp of last update (-1 if unknown)
 #   Line 5: Unix timestamp of the newest repository metadata refresh (-1 if none)
 #   Line 6: Unix timestamp since when no background refresh has completed
 #           (-1 if the last one completed)
+#   Line 7: Reboot hint from needs-restarting: "yes <comma-separated list>",
+#           "no" or "unknown"
 #
-# Lines 2-4 come from a cache so the agent never waits on dnf. When the
-# package-manager cache changes, a detached background run (--refresh)
-# recomputes them within REFRESH_TIMEOUT. After a failed or unfinished
-# refresh, the next one starts after RETRY_INTERVAL at the earliest. Lines 1,
-# 5 and 6 are computed on every run.
+# Lines 2-4 and 7 come from a cache so the agent never waits on dnf. When the
+# package state changes or the host reboots, a detached background run
+# (--refresh) recomputes them within REFRESH_TIMEOUT. After a failed or
+# unfinished refresh, the next one starts after RETRY_INTERVAL at the
+# earliest. Lines 1, 5 and 6 are computed on every run.
 #
 # Copyright 2015, Henri Wahl <h.wahl@ifw-dresden.de>
 # Copyright 2018, Moritz Schlarb <schlarbm@uni-mainz.de>
@@ -169,6 +171,32 @@ check_reboot_required() {
     fi
 }
 
+# --- Reboot hint from needs-restarting -r ---
+# Covers core libraries and services (glibc, systemd, openssl, ...) besides
+# the kernel. It reads only the rpm database, so all repositories stay
+# disabled. Both the exit code and the message must match: a missing plugin
+# also exits 1. Prints "yes <packages>", "no" or "unknown".
+
+get_reboot_hint() {
+    local -a cmd
+    local output packages rc=0
+
+    case "$PKG_MGR" in
+        dnf5)    cmd=(dnf5 -C --quiet "--disablerepo=*" needs-restarting -r) ;;
+        dnf|yum) cmd=("$PKG_MGR" -C --quiet "--disablerepo=*" "${DNF4_PLUGIN_ARGS[@]}" needs-restarting -r) ;;
+    esac
+
+    output=$(LC_ALL=C "${cmd[@]}" 2>/dev/null) || rc=$?
+    if [[ "$rc" == 0 && "$output" == *"Reboot should not be necessary"* ]]; then
+        echo "no"
+    elif [[ "$rc" == 1 && "$output" == *"Reboot is required"* ]]; then
+        packages=$(awk '/^[[:space:]]+\* / {print $2}' <<< "$output" | paste -sd, -) || true
+        printf 'yes %s\n' "$packages"
+    else
+        echo "unknown"
+    fi
+}
+
 # --- List pending upgrades ---
 # Prints one "name.arch" per pending upgrade. Returns 2 if the package manager
 # rejected an option (e.g. --security unsupported) and 1 on any other failure
@@ -290,11 +318,12 @@ get_metadata_timestamp() {
 # --- Package state fingerprint ---
 # Changes when repo metadata is refreshed (repomd.xml per repo; dnf5 keeps its
 # cache in /var/cache/libdnf5), packages are installed or removed (rpmdb,
-# including plain rpm -U) or the versionlock list changes. Solver caches
-# (*.solv) are left out because dnf rewrites them during read-only queries.
+# including plain rpm -U), the versionlock list changes or the host reboots
+# (boot ID, for the reboot hint). Solver caches (*.solv) are left out because
+# dnf rewrites them during read-only queries.
 
 get_pkg_state_fingerprint() {
-    local repo_metadata rpmdb versionlock
+    local repo_metadata rpmdb versionlock boot_id
     repo_metadata=$(find /var/cache/dnf /var/cache/yum /var/cache/libdnf5 \
         -name repomd.xml -printf '%p %T@ %s\n' 2>/dev/null) || true
     rpmdb=$(find /var/lib/rpm /usr/lib/sysimage/rpm -maxdepth 1 \
@@ -302,7 +331,8 @@ get_pkg_state_fingerprint() {
         -printf '%p %T@ %s\n' 2>/dev/null) || true
     versionlock=$(find /etc/dnf/plugins/versionlock.list /etc/yum/pluginconf.d/versionlock.list \
         /etc/dnf/versionlock.toml -maxdepth 0 -printf '%p %T@ %s\n' 2>/dev/null) || true
-    sort <<< "${repo_metadata}"$'\n'"${rpmdb}"$'\n'"${versionlock}"
+    boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null) || true
+    sort <<< "${repo_metadata}"$'\n'"${rpmdb}"$'\n'"${versionlock}"$'\n'"boot_id ${boot_id}"
 }
 
 # --- Refresh the cached result (runs detached via --refresh) ---
@@ -329,14 +359,15 @@ refresh() {
 
     # Take the fingerprint first, so changes made while the queries run
     # trigger another refresh.
-    local state updates security_info last_timestamp
+    local state updates security_info last_timestamp reboot_hint
     state=$(get_pkg_state_fingerprint)
     updates=$(count_updates)
     security_info=$(count_security_updates)
     last_timestamp=$(get_last_update_timestamp)
+    reboot_hint=$(get_reboot_hint)
 
     rm -f "$CACHE_RESULT_TMP"
-    if ! (set -o noclobber; printf '%s\n' "$updates" "$security_info" "$last_timestamp" > "$CACHE_RESULT_TMP") \
+    if ! (set -o noclobber; printf '%s\n' "$updates" "$security_info" "$last_timestamp" "$reboot_hint" > "$CACHE_RESULT_TMP") \
         || ! mv -f "$CACHE_RESULT_TMP" "$CACHE_RESULT"; then
         return 0
     fi
@@ -425,10 +456,14 @@ main() {
     fi
 
     if [[ -s "$CACHE_RESULT" ]]; then
+        # Lines 2-4, then the reboot hint (missing in caches of older versions)
+        local -a result
+        mapfile -t result < "$CACHE_RESULT"
         check_reboot_required
-        cat "$CACHE_RESULT"
+        printf '%s\n' "${result[@]:0:3}"
         get_metadata_timestamp
         get_refresh_pending_since
+        echo "${result[3]:-unknown}"
     else
         echo "ERROR: First update check is running in the background, results follow on the next agent run"
     fi
