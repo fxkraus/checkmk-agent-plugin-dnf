@@ -27,6 +27,8 @@ in_container() {
     docker exec "${container}" bash -euc "$1"
 }
 
+# The agent (MK_READ_REMOTE=true) reads the socket until EOF before it
+# answers, so close the sending side first, as the agent controller does.
 query_agent() {
     in_container 'python3 -c "
 import os, socket
@@ -35,6 +37,8 @@ if os.path.exists(\"/run/check-mk-agent.socket\"):
     s.connect(\"/run/check-mk-agent.socket\")
 else:
     s = socket.create_connection((\"127.0.0.1\", 6556))
+s.settimeout(120)
+s.shutdown(socket.SHUT_WR)
 print(b\"\".join(iter(lambda: s.recv(65536), b\"\")).decode(errors=\"replace\"))
 "' | awk '/^<<<dnf>>>/ {p = 1; print; next} /^<<</ {p = 0} p'
 }
