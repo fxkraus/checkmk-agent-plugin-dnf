@@ -19,9 +19,9 @@ dev = [
     "pytest-md==0.2.0",
     "pytest-emoji==0.2.0",
     "requests-mock==1.12.1",
-    "ruff==0.16.8",
+    "ruff==0.16.9",
     "mypy==2.3.1",
-    "gitpython==3.1.62",
+    "gitpython==3.2.0",
 ]
 
 [tool.uv]
