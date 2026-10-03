@@ -105,6 +105,15 @@ it is older than 7 days (configurable).
    mkp install dnf-<version>.mkp
    ```
 
+   To check that the file is the one the release workflow built, compare it
+   with the release's `SHA256SUMS` and verify its signed build provenance
+   with the [GitHub CLI](https://cli.github.com/):
+
+   ```bash
+   sha256sum -c SHA256SUMS
+   gh attestation verify dnf-<version>.mkp -R fxkraus/checkmk-agent-plugin-dnf
+   ```
+
 ### Manual (development)
 
 Copy the file tree under `lib/` into
@@ -278,7 +287,8 @@ The build also fails if it cannot stamp the version into the agent plugin
 ### Releasing
 
 Push a version tag on a commit of `main`; the **Release MKP** workflow builds
-the MKP and publishes a GitHub release (`iN`/`bN` tags as pre-releases):
+the MKP and publishes a GitHub release (`iN`/`bN` tags as pre-releases) with
+a `SHA256SUMS` file and a signed build provenance attestation:
 
 ```bash
 git tag v1.2.3
@@ -468,7 +478,7 @@ Inside the devcontainer or a Checkmk site, `pytest tests/` works directly.
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `ci.yml` | push to `main`, pull requests | pre-commit lint, gitleaks secret scan, BATS on AlmaLinux 8/9/10 and Fedora 42, end-to-end test with the real agent under systemd, pytest against Checkmk 2.5, MKP build |
-| `release.yml` | tag `vX.Y.Z` (optionally `pN`, `iN`, `bN` suffix) on `main` | builds the MKP with a read-only token, then publishes a GitHub release (`iN`/`bN` as pre-release) with the base image digest |
+| `release.yml` | tag `vX.Y.Z` (optionally `pN`, `iN`, `bN` suffix) on `main` | builds the MKP with a read-only token, then publishes a GitHub release (`iN`/`bN` as pre-release) with the base image digest, `SHA256SUMS` and a build provenance attestation |
 | `dependabot-auto-merge.yml` | Dependabot pull requests | enables auto-merge for minor/patch uv updates (public repository only) |
 
 Every commit on `main` produces an MKP, attached to the CI run as the
