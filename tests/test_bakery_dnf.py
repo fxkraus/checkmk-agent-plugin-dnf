@@ -34,8 +34,23 @@ def bakery() -> ModuleType:
         pytest.param({"deploy": ("interval", 899.6)}, [Plugin(base_os=OS.LINUX, source=Path("dnf"), interval=900)], id="interval-rounded"),
         pytest.param({"deploy": ("sync", None)}, [Plugin(base_os=OS.LINUX, source=Path("dnf"))], id="sync"),
         pytest.param({"deploy": ("nointerval", None)}, [], id="do-not-deploy"),
-        pytest.param({}, [], id="no-deploy-key"),
+        pytest.param({"deploy": "nointerval"}, [], id="broken-earlier-migration"),
+        pytest.param({}, [Plugin(base_os=OS.LINUX, source=Path("dnf"))], id="legacy-without-interval"),
+        pytest.param({"interval": 0}, [Plugin(base_os=OS.LINUX, source=Path("dnf"))], id="legacy-interval-zero"),
+        pytest.param({"interval": 7200}, [Plugin(base_os=OS.LINUX, source=Path("dnf"), interval=7200)], id="legacy-interval"),
+        pytest.param({"interval": 30}, [Plugin(base_os=OS.LINUX, source=Path("dnf"), interval=60)], id="legacy-interval-below-minimum"),
     ],
 )
 def test_get_dnf_files(bakery: ModuleType, conf: dict[str, object], expected: list[Plugin]) -> None:
     assert list(bakery.get_dnf_files(conf)) == expected
+
+
+@pytest.mark.parametrize(
+    "legacy",
+    [{}, {"interval": None}, {"interval": 0}, {"interval": 30}, {"interval": 7200}, {"deploy": "nointerval"}],
+)
+def test_legacy_values_bake_like_their_migration(bakery: ModuleType, legacy: dict[str, object]) -> None:
+    """Unmigrated rule values must deploy exactly what the ruleset migration turns them into."""
+    from cmk_addons.plugins.dnf.rulesets.ruleset_dnf_bakery import _migrate_legacy_config
+
+    assert list(bakery.get_dnf_files(legacy)) == list(bakery.get_dnf_files(_migrate_legacy_config(legacy)))

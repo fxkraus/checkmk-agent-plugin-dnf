@@ -211,6 +211,15 @@ class TestCheckDnf:
         summaries = [r.summary for r in results if hasattr(r, "summary")]
         assert any("up to date" in s for s in summaries)
 
+    def test_failed_security_query_is_not_up_to_date(self, default_params):
+        """A failed security query (-1) must not be summarised as up to date."""
+        section = DnfSection(reboot_required=False, packages=0, security_packages=-1, last_update_timestamp=2000000000)
+        results = [r for r in check_dnf(default_params, section) if isinstance(r, Result)]
+
+        assert not any("up to date" in r.summary for r in results)
+        assert any(r.state == State.UNKNOWN and r.summary == "Security update check failed" for r in results)
+        assert any(r.state == State.OK and r.summary == "Normal updates: 0" for r in results)
+
     def test_check_normal_updates_warn(self, default_params):
         """Normal updates at warn threshold should result in WARN."""
         section = DnfSection(
