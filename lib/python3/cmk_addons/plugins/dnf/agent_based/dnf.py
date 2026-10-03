@@ -28,15 +28,16 @@ unfinished background refresh) are missing from older agent plugins.
 # SPDX-License-Identifier: GPL-2.0-only
 
 import contextlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from time import time
-from typing import NamedTuple
+from typing import NamedTuple, TypedDict
 
 from cmk.agent_based.v2 import (
     AgentSection,
     CheckPlugin,
     CheckResult,
     DiscoveryResult,
+    LevelsT,
     Metric,
     Result,
     Service,
@@ -44,6 +45,20 @@ from cmk.agent_based.v2 import (
     check_levels,
     render,
 )
+
+
+class DnfParams(TypedDict, total=False):
+    """Check parameters (ruleset "dnf"); states are 0-3 (OK, WARN, CRIT, UNKNOWN)."""
+
+    normal: LevelsT[int]
+    security: LevelsT[int]
+    reboot_req: int
+    last_update_time_diff: int
+    last_update_state: int
+    metadata_max_age: int
+    metadata_age_state: int
+    refresh_pending_max_age: int
+    refresh_pending_state: int
 
 
 class DnfSection(NamedTuple):
@@ -138,7 +153,7 @@ def discover_dnf(section: DnfSection) -> DiscoveryResult:
 # ---------------------------------------------------------------------------
 
 
-def _check_updates(params: Mapping[str, object], section: DnfSection) -> CheckResult:
+def _check_updates(params: DnfParams, section: DnfSection) -> CheckResult:
     # -1 (security query failed) must not read as "up to date"; -2 (not
     # supported) carries no information about pending updates.
     if section.packages == 0 and section.security_packages in (0, -2):
@@ -176,7 +191,7 @@ def _check_updates(params: Mapping[str, object], section: DnfSection) -> CheckRe
         yield Result(state=State.UNKNOWN, summary="Security update check failed")
 
 
-def _check_last_update(params: Mapping[str, object], section: DnfSection) -> CheckResult:
+def _check_last_update(params: DnfParams, section: DnfSection) -> CheckResult:
     """A missing or old last upgrade only matters while updates are pending."""
     if section.last_update_timestamp < 0:
         if section.packages == 0:
@@ -195,7 +210,7 @@ def _check_last_update(params: Mapping[str, object], section: DnfSection) -> Che
         yield Result(state=State(int(params.get("last_update_state", 1))), summary=f"Last update too long ago: {last_update}")
 
 
-def _check_metadata_age(params: Mapping[str, object], section: DnfSection) -> CheckResult:
+def _check_metadata_age(params: DnfParams, section: DnfSection) -> CheckResult:
     """Package queries are cache-only, so stale metadata hides pending updates."""
     if section.metadata_timestamp < 0:
         return
@@ -211,7 +226,7 @@ def _check_metadata_age(params: Mapping[str, object], section: DnfSection) -> Ch
         )
 
 
-def _check_refresh_pending(params: Mapping[str, object], section: DnfSection) -> CheckResult:
+def _check_refresh_pending(params: DnfParams, section: DnfSection) -> CheckResult:
     """The counts are cached; a refresh that never completes would freeze them."""
     if section.refresh_pending_since < 0:
         return
@@ -224,7 +239,7 @@ def _check_refresh_pending(params: Mapping[str, object], section: DnfSection) ->
         )
 
 
-def check_dnf(params: Mapping[str, object], section: DnfSection) -> CheckResult:
+def check_dnf(params: DnfParams, section: DnfSection) -> CheckResult:
     """Evaluate available DNF updates against configurable thresholds."""
     if section.error_message:
         yield Result(state=State.UNKNOWN, summary=section.error_message)

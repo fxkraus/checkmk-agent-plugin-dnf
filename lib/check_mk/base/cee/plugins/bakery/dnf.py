@@ -39,7 +39,7 @@ def get_dnf_files(conf: Any) -> FileGenerator:
     ``("nointerval", None)`` (do not deploy).
     """
     match _deploy_choice(conf):
-        case ("interval", interval):
+        case ("interval", int() | float() as interval):
             yield Plugin(base_os=OS.LINUX, source=Path("dnf"), interval=round(interval))
         case ("sync", _):
             yield Plugin(base_os=OS.LINUX, source=Path("dnf"))

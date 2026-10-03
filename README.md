@@ -223,6 +223,7 @@ build/
   scripts/discover-services.sh   # Trigger service discovery via REST API
 tests/
   run-pytest.sh                  # Runs pytest with the Checkmk interpreter
+  run-mypy.sh                    # Type-checks the plugin modules with mypy
   test_check_dnf.py              # Check plugin unit tests (pytest)
   test_rulesets_dnf.py           # Ruleset migration and validation tests (pytest)
   test_bakery_dnf.py             # Bakery plugin tests (pytest)
@@ -400,7 +401,7 @@ CI runs exactly the same hooks, so a clean local run means a clean CI run.
 |---|---|
 | gitleaks, detect-private-key | secrets and private keys in staged changes |
 | ruff (check + format) | Python lint and formatting |
-| mypy | type checks for the build script |
+| mypy | type checks for the build script (the plugin modules: `make typecheck-docker`) |
 | shellcheck | shell scripts, including the agent plugin |
 | hadolint | Dockerfiles (`.hadolint.yaml`) |
 | actionlint | GitHub Actions workflows |
@@ -483,11 +484,24 @@ The image has no uv, so the target exports the `test` dependency group from
 
 Inside the devcontainer or a Checkmk site, `pytest tests/` works directly.
 
+**Type checks:**
+
+mypy checks the plugin modules against the Checkmk libraries, also inside the
+build image (CI runs it in the pytest job):
+
+```bash
+make typecheck-docker
+```
+
+Checkmk ships no `py.typed` markers, so
+[`tests/run-mypy.sh`](tests/run-mypy.sh) mirrors its sources into one tree on
+`MYPYPATH` instead.
+
 ### CI/CD
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | push to `main`, pull requests | pre-commit lint, gitleaks secret scan, BATS on AlmaLinux 8/9/10 and Fedora 42, end-to-end test with the real agent under systemd, pytest against Checkmk 2.5, MKP build |
+| `ci.yml` | push to `main`, pull requests | pre-commit lint, gitleaks secret scan, BATS on AlmaLinux 8/9/10 and Fedora 42, end-to-end test with the real agent under systemd, pytest and mypy against Checkmk 2.5, MKP build |
 | `release.yml` | tag `vX.Y.Z` (optionally `pN`, `iN`, `bN` suffix) on `main` | builds the MKP with a read-only token, then publishes a GitHub release (`iN`/`bN` as pre-release) with the base image digest, `SHA256SUMS` and a build provenance attestation |
 | `dependabot-auto-merge.yml` | Dependabot pull requests | enables auto-merge for minor/patch uv updates (public repository only) |
 

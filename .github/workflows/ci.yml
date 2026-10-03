@@ -105,8 +105,9 @@ jobs:
       - name: Query the socket-activated agent
         run: tests/systemd/test-socket-activated-agent.sh "$RUNNER_TEMP/agent.rpm"
 
-  # Python tests against the real Checkmk libraries of every supported
-  # version. -latest tags keep the matrix free of version maintenance.
+  # Python tests and mypy against the real Checkmk libraries of every
+  # supported version. -latest tags keep the matrix free of version
+  # maintenance.
   pytest:
     name: pytest (Checkmk ${{ matrix.checkmk }})
     runs-on: ubuntu-latest
@@ -135,6 +136,16 @@ jobs:
           docker run --rm -v "$PWD:/source:ro" \
             -v "$RUNNER_TEMP/requirements-test.txt:/requirements-test.txt:ro" \
             --entrypoint /source/tests/run-pytest.sh "$IMAGE"
+        env:
+          IMAGE: ${{ matrix.image }}
+
+      # pre-commit's mypy only covers build/; the plugin modules need the
+      # Checkmk libraries.
+      - name: Run mypy
+        run: |
+          docker run --rm -v "$PWD:/source:ro" \
+            -v "$RUNNER_TEMP/requirements-test.txt:/requirements-test.txt:ro" \
+            --entrypoint /source/tests/run-mypy.sh "$IMAGE"
         env:
           IMAGE: ${{ matrix.image }}
 
