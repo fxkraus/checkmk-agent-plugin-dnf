@@ -5,7 +5,8 @@
 # The first two non-option arguments form a key (e.g. "check-upgrade",
 # "history-list"), suffixed with "-security" when --security is passed.
 # Prints $FAKE_PM_DIR/<key>.out if present and exits with the code in
-# $FAKE_PM_DIR/<key>.rc (default 0).
+# $FAKE_PM_DIR/<key>.rc (default 0). Each call's arguments are appended to
+# $FAKE_PM_DIR/<key>.args.
 
 : "${FAKE_PM_DIR:?FAKE_PM_DIR must point at the fake responses}"
 
@@ -20,6 +21,7 @@ for arg in "$@"; do
 done
 
 key="$(IFS=-; echo "${words[*]}")${suffix}"
+echo "$*" >> "${FAKE_PM_DIR}/${key}.args"
 
 if [[ -f "${FAKE_PM_DIR}/${key}.out" ]]; then
     cat "${FAKE_PM_DIR}/${key}.out"

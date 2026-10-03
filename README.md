@@ -42,8 +42,10 @@ The agent plugin automatically detects the best available package manager
 - **Update count** — reports the total number of available package updates.
 - **Security update count** — reports security-classified updates separately
   (with an optional package list in the service details).
-- **Reboot detection** — compares the running kernel against the latest
-  installed kernel to flag pending reboots.
+- **Versionlock aware** — packages locked with `dnf versionlock` are not
+  counted as pending updates, on dnf 4 (plugin) as on dnf5 (built in).
+- **Reboot detection** — compares the running kernel against the highest
+  installed kernel version to flag pending reboots.
 - **Last update age** — warns when the system has not been updated within a
   configurable number of days.
 - **Never blocks the agent** — every agent run answers from a cache right away.
@@ -51,7 +53,9 @@ The agent plugin automatically detects the best available package manager
   database), a detached background run recomputes the result, capped at 5
   minutes. The first run after installing reports "running in the background"
   (UNKNOWN) until that refresh finishes. Hosts without `setsid`/`flock`
-  (util-linux) refresh inline, capped at 45 s.
+  (util-linux) refresh inline, capped at 45 s. The cache directory
+  (`$MK_VARDIR/cache`) must be owned by the agent user and must not be
+  group- or world-writable; otherwise the plugin reports an error.
 - **WATO rules** — fully configurable thresholds via the Checkmk GUI.
 - **Agent Bakery** — deploy the agent plugin automatically, with an optional
   async execution interval.
@@ -153,6 +157,7 @@ tests/
   test_check_dnf.py              # Python unit tests (pytest)
   test_agent_dnf.bats            # Shell tests (BATS)
   fixtures/fake-pm               # Fake dnf5/dnf/yum used by the BATS tests
+  fixtures/fake-rpm              # Fake rpm for the reboot detection tests
 ```
 
 ---
@@ -350,10 +355,12 @@ bats tests/test_agent_dnf.bats
 ```
 
 The package-manager parsing tests use a fake `dnf5`/`dnf`
-([`tests/fixtures/fake-pm`](tests/fixtures/fake-pm)) and run on any Linux host.
-The tests against the real package manager need `dnf`/`dnf5` with a populated
-metadata cache. One test upgrades a real package and only runs with
-`DNF_AGENT_TEST_ALLOW_UPGRADE=1`, so run it in a throwaway container:
+([`tests/fixtures/fake-pm`](tests/fixtures/fake-pm)) and the reboot tests a
+fake `rpm` ([`tests/fixtures/fake-rpm`](tests/fixtures/fake-rpm)); both run on
+any Linux host. The tests against the real package manager need `dnf`/`dnf5`
+with a populated metadata cache. Two tests modify the system (they downgrade,
+upgrade and version-lock packages) and only run with
+`DNF_AGENT_TEST_ALLOW_UPGRADE=1`, so run them in a throwaway container:
 
 ```bash
 docker run --rm -v "$PWD:/code:ro" -w /code -e DNF_AGENT_TEST_ALLOW_UPGRADE=1 \

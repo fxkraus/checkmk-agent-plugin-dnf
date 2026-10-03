@@ -17,6 +17,8 @@ setup() {
     # Set up mock MK_VARDIR
     export MK_VARDIR="${TEST_TEMP_DIR}/mk_vardir"
     mkdir -p "${MK_VARDIR}/cache"
+    # The agent refuses a group-writable cache dir (umask 002 is common)
+    chmod 755 "${MK_VARDIR}/cache"
 
     # Path to the agent plugin
     AGENT_PLUGIN="${BATS_TEST_DIRNAME}/../agents/plugins/dnf"
@@ -64,7 +66,7 @@ use_fake_pm() {
     mkdir -p "${FAKE_PM_DIR}" "${STUB_BIN}"
 
     local tool
-    for tool in bash awk cat cut date flock grep head ls mkdir mv paste rm sed setsid sort timeout uname; do
+    for tool in bash awk cat cut date flock grep head ls mkdir mv paste rm sed setsid sort stat tail timeout uname; do
         ln -s "$(command -v "$tool")" "${STUB_BIN}/${tool}"
     done
     ln -s "${BATS_TEST_DIRNAME}/fixtures/fake-pm" "${STUB_BIN}/$1"
@@ -74,6 +76,35 @@ use_fake_pm() {
 fake_pm_reply() {
     printf '%s' "${3:-}" > "${FAKE_PM_DIR}/$1.out"
     echo "$2" > "${FAKE_PM_DIR}/$1.rc"
+}
+
+# pending_upgrade <pm> <check command>: print a package with a pending
+# upgrade. Fresh images are usually fully patched, so downgrade packages that
+# have older builds in the tested repos to create one. Prints nothing on failure.
+pending_upgrade() {
+    local pkg
+    pkg=$("$1" -q "$2" | awk '/^[^[:space:]]/ {print $1; exit}')
+    if [[ -z "$pkg" ]] && "$1" -y -q downgrade acl attr tzdata &>/dev/null; then
+        pkg=$("$1" -q "$2" | awk '/^[^[:space:]]/ {print $1; exit}')
+    fi
+    echo "$pkg"
+}
+
+# fake_kernel <running VERSION-RELEASE> <installed VERSION-RELEASE...>
+# Fakes uname -r and rpm (tests/fixtures/fake-rpm); the running kernel's
+# config file is owned by kernel-core unless config-owners is rewritten.
+fake_kernel() {
+    local running="$1"
+    shift
+    # Remove the symlink first; writing through it would replace the real uname
+    rm -f "${STUB_BIN}/uname"
+    printf '#!/bin/bash\necho %s.x86_64\n' "${running}" > "${STUB_BIN}/uname"
+    chmod +x "${STUB_BIN}/uname"
+    ln -s "${BATS_TEST_DIRNAME}/fixtures/fake-rpm" "${STUB_BIN}/rpm"
+    echo "kernel-core ${running}" > "${FAKE_PM_DIR}/config-owners"
+    printf '%s\n' "$@" > "${FAKE_PM_DIR}/kernels"
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
 }
 
 teardown() {
@@ -258,6 +289,51 @@ new-pkg.x86_64                     2-1.fc42       updates
     [ "${lines[2]}" = "1" ]
 }
 
+@test "dnf: plugins stay enabled so versionlock is honoured" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    agent --refresh
+    run cat "${FAKE_PM_DIR}/check-update.args" "${FAKE_PM_DIR}/check-update-security.args" \
+        "${FAKE_PM_DIR}/history-list.args"
+    echo "$output"
+    [ "${#lines[@]}" -eq 3 ]
+    [[ "$output" != *--noplugins* ]]
+    [ "$(grep -c -- '--disableplugin=subscription-manager --disableplugin=product-id' <<< "$output")" -eq 3 ]
+}
+
+@test "dnf: last update is the newest upgrade transaction" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    fake_pm_reply history-list 0 \
+'ID     | Command line             | Date and time    | Action(s)      | Altered
+-------------------------------------------------------------------------------
+     4 | install which            | 2026-09-27 10:48 | Install        |    1
+     3 | upgrade                  | 2026-09-20 08:00 | I, U           |   25
+     2 | update bash              | 2026-09-10 08:00 | Upgrade        |    1
+     1 |                          | 2026-04-26 07:47 | Install        |  126 EE
+'
+    run_agent_refreshed
+    [ "$status" -eq 0 ]
+    [ "${lines[4]}" = "$(date -d '2026-09-20 08:00' +%s)" ]
+}
+
+@test "dnf: history without upgrades yields -1" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    fake_pm_reply history-list 0 \
+'ID     | Command line             | Date and time    | Action(s)      | Altered
+-------------------------------------------------------------------------------
+     2 | install which            | 2026-09-27 10:48 | Install        |    1
+     1 |                          | 2026-04-26 07:47 | Install        |  126 EE
+'
+    run_agent_refreshed
+    [ "$status" -eq 0 ]
+    [ "${lines[4]}" = "-1" ]
+}
+
 # =============================================================================
 # Background refresh
 # =============================================================================
@@ -385,6 +461,70 @@ Begin time     : 2026-09-27 10:48:33
 }
 
 # =============================================================================
+# Reboot detection (fake rpm and uname)
+# =============================================================================
+
+@test "Reboot: running the newest kernel needs no reboot" {
+    use_fake_pm dnf
+    fake_kernel 5.14.0-503.9.1.el9 5.14.0-427.13.1.el9 5.14.0-503.9.1.el9
+    run_agent_refreshed
+    [ "${lines[1]}" = "no" ]
+}
+
+@test "Reboot: a newer installed kernel needs a reboot" {
+    use_fake_pm dnf
+    fake_kernel 5.14.0-503.9.1.el9 5.14.0-503.9.1.el9 5.14.0-503.10.1.el9
+    run_agent_refreshed
+    [ "${lines[1]}" = "yes" ]
+}
+
+@test "Reboot: an older kernel installed later needs no reboot" {
+    use_fake_pm dnf
+    fake_kernel 5.14.0-503.9.1.el9 5.14.0-503.9.1.el9 5.14.0-427.13.1.el9
+    run_agent_refreshed
+    [ "${lines[1]}" = "no" ]
+}
+
+@test "Reboot: only the first package owning the kernel config is used" {
+    use_fake_pm dnf
+    fake_kernel 5.14.0-503.9.1.el9 5.14.0-503.9.1.el9
+    printf 'kernel-core 5.14.0-503.9.1.el9\nkernel-rt-core 5.14.0-503.9.1.el9\n' \
+        > "${FAKE_PM_DIR}/config-owners"
+    run_agent_refreshed
+    [ "${lines[1]}" = "no" ]
+}
+
+@test "Reboot: a kernel config owned by no package needs no reboot" {
+    use_fake_pm dnf
+    fake_kernel 6.1.0-custom 5.14.0-503.9.1.el9
+    rm "${FAKE_PM_DIR}/config-owners"
+    run_agent_refreshed
+    [ "${lines[1]}" = "no" ]
+}
+
+# =============================================================================
+# Cache file safety
+# =============================================================================
+
+@test "A dangling symlink as cache file is refused, not followed" {
+    use_fake_pm dnf
+    ln -s "${TEST_TEMP_DIR}/planted" "${RESULT_CACHE}"
+    run agent
+    [ "$status" -eq 0 ]
+    [[ "${lines[1]}" == ERROR:*symlink* ]]
+    [ ! -e "${TEST_TEMP_DIR}/planted" ]
+}
+
+@test "A group- or world-writable cache directory is refused" {
+    use_fake_pm dnf
+    chmod 777 "${MK_VARDIR}/cache"
+    run agent
+    [ "$status" -eq 0 ]
+    [[ "${lines[1]}" == ERROR:*writable* ]]
+    [ ! -e "${RESULT_CACHE}" ]
+}
+
+# =============================================================================
 # Real package manager (destructive: upgrades a package; opt-in for CI)
 # =============================================================================
 
@@ -399,7 +539,7 @@ Begin time     : 2026-09-27 10:48:33
     else
         pm=dnf; check=check-update
     fi
-    pkg=$("$pm" -q "$check" | awk '/^[^[:space:]]/ {print $1; exit}') || true
+    pkg=$(pending_upgrade "$pm" "$check")
     [ -n "$pkg" ] || skip "No pending upgrades to apply"
     "$pm" -y -q upgrade "$pkg"
 
@@ -409,23 +549,30 @@ Begin time     : 2026-09-27 10:48:33
     (( $(date +%s) - lines[4] < 3600 ))
 }
 
+@test "dnf: a version-locked package is not counted (real dnf 4)" {
+    if [[ "${DNF_AGENT_TEST_ALLOW_UPGRADE:-}" != "1" ]]; then
+        skip "Set DNF_AGENT_TEST_ALLOW_UPGRADE=1 to allow installing the versionlock plugin"
+    fi
+    if command -v dnf5 &>/dev/null; then
+        skip "dnf5 honours versionlock natively"
+    fi
+
+    dnf -y -q install python3-dnf-plugin-versionlock
+    local pkg before
+    pkg=$(pending_upgrade dnf check-update)
+    [ -n "$pkg" ] || skip "No pending upgrades to lock"
+
+    run_agent_refreshed
+    before="${lines[2]}"
+    dnf -q versionlock add "${pkg%.*}"
+    run_agent_refreshed
+    dnf -q versionlock clear
+    [ "${lines[2]}" -eq $(( before - 1 )) ]
+}
+
 # =============================================================================
 # Function isolation tests (source the script and test functions)
 # =============================================================================
-
-@test "detect_distribution function works" {
-    # Source the script to get access to functions
-    source "${AGENT_PLUGIN}" || true
-
-    # The function should set MAJOR_VERSION and DISTRO_ID
-    if declare -f detect_distribution &>/dev/null; then
-        detect_distribution
-        [ -n "$MAJOR_VERSION" ]
-        [ -n "$DISTRO_ID" ]
-    else
-        skip "Function not accessible (script may have changed structure)"
-    fi
-}
 
 @test "detect_package_manager function finds dnf or yum" {
     source "${AGENT_PLUGIN}" || true
