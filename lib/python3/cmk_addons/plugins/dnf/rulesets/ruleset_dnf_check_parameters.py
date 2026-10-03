@@ -52,7 +52,10 @@ def _parameter_form_dnf() -> Dictionary:
             "last_update_time_diff": DictElement(
                 parameter_form=Integer(
                     title=Title("Maximum age of last update"),
-                    help_text=Help("If no update has been applied within this many days and updates are available, the service state changes."),
+                    help_text=Help(
+                        "If no update has been applied within this many days and updates are available, the service state changes. "
+                        "The same applies if no upgrade transaction is found in the package history at all."
+                    ),
                     unit_symbol="days",
                     prefill=DefaultValue(60),
                     custom_validate=(validators.NumberInRange(min_value=1),),
@@ -62,6 +65,27 @@ def _parameter_form_dnf() -> Dictionary:
             "last_update_state": DictElement(
                 parameter_form=ServiceState(
                     title=Title("State when last update is too old"),
+                    prefill=DefaultValue(ServiceState.WARN),
+                ),
+                required=False,
+            ),
+            "metadata_max_age": DictElement(
+                parameter_form=Integer(
+                    title=Title("Maximum age of repository metadata"),
+                    help_text=Help(
+                        "The agent plugin queries the local metadata cache only, which dnf-makecache.timer (dnf 4) or "
+                        "dnf5-makecache.timer (dnf5) keeps current. If the newest metadata is older than this, the timer is "
+                        "probably not running and pending updates may be missed."
+                    ),
+                    unit_symbol="days",
+                    prefill=DefaultValue(7),
+                    custom_validate=(validators.NumberInRange(min_value=1),),
+                ),
+                required=False,
+            ),
+            "metadata_age_state": DictElement(
+                parameter_form=ServiceState(
+                    title=Title("State when repository metadata is too old"),
                     prefill=DefaultValue(ServiceState.WARN),
                 ),
                 required=False,

@@ -163,8 +163,8 @@ teardown() {
     run_agent_refreshed
     [ "$status" -eq 0 ]
 
-    # Section header + 4 data lines
-    [ "${#lines[@]}" -eq 5 ]
+    # Section header + 5 data lines
+    [ "${#lines[@]}" -eq 6 ]
 }
 
 @test "Reboot required line is yes or no" {
@@ -232,7 +232,8 @@ teardown() {
 
 # =============================================================================
 # Package manager output parsing (fake package manager, runs anywhere on Linux)
-# Output lines: [0] header, [1] reboot, [2] updates, [3] security, [4] timestamp
+# Output lines: [0] header, [1] reboot, [2] updates, [3] security,
+# [4] last update, [5] metadata refresh
 # =============================================================================
 
 @test "dnf5: update count ignores wrapped and obsoleting lines" {
@@ -351,7 +352,7 @@ new-pkg.x86_64                     2-1.fc42       updates
 
     wait_for_file "${RESULT_CACHE}"
     run agent
-    [ "${#lines[@]}" -eq 5 ]
+    [ "${#lines[@]}" -eq 6 ]
     [ "${lines[2]}" = "1" ]
 }
 
@@ -381,7 +382,7 @@ new-pkg.x86_64                     2-1.fc42       updates
 
     run agent
     [ "$status" -eq 0 ]
-    [ "${#lines[@]}" -eq 5 ]
+    [ "${#lines[@]}" -eq 6 ]
     [ "${lines[2]}" = "0" ]
 }
 
@@ -438,6 +439,15 @@ new-pkg.x86_64                     2-1.fc42       updates
     [ "${lines[2]}" = "0" ]
 }
 
+@test "Metadata refresh line is a timestamp or -1" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    run_agent_refreshed
+    [ "$status" -eq 0 ]
+    [[ "${lines[5]}" =~ ^(-1|[0-9]+)$ ]]
+}
+
 @test "dnf: unsupported --security option reports -2" {
     use_fake_pm dnf
     fake_pm_reply check-update 100 'bash.x86_64    5.1.8-9.el9    baseos
@@ -480,6 +490,28 @@ Packages altered:
     run_agent_refreshed
     [ "$status" -eq 0 ]
     [ "${lines[4]}" = "$(date -d '2026-09-27 10:48:31' +%s)" ]
+}
+
+@test "dnf5: the last upgrade is found behind many newer transactions" {
+    use_fake_pm dnf5
+    fake_pm_reply check-upgrade 0
+    fake_pm_reply check-upgrade-security 0
+    # 60 transactions, newest first; only the oldest is an upgrade
+    local id list='ID Command line                           Date and time       Action(s) Altered'$'\n'
+    mkdir "${FAKE_PM_DIR}/history-info.d"
+    for (( id = 60; id >= 1; id-- )); do
+        list+=" ${id} dnf5 -y install pkg${id}              2026-09-27 10:48:33                 1"$'\n'
+        printf 'Transaction ID : %s\nBegin time     : 2026-09-%02d 08:00:00\n  %s pkg%s-0:1-1.fc42.noarch User updates\n' \
+            "${id}" "$(( id < 28 ? id : 28 ))" "$( (( id == 1 )) && echo Upgrade || echo Install )" "${id}" \
+            > "${FAKE_PM_DIR}/history-info.d/${id}"
+    done
+    fake_pm_reply history-list 0 "${list}"
+
+    run_agent_refreshed
+    [ "$status" -eq 0 ]
+    [ "${lines[4]}" = "$(date -d '2026-09-01 08:00:00' +%s)" ]
+    # Two batches of history info: 60-11, then 10-1
+    [ "$(wc -l < "${FAKE_PM_DIR}/history-info.args")" -eq 2 ]
 }
 
 @test "dnf5: history without upgrades yields -1" {
@@ -608,6 +640,23 @@ Begin time     : 2026-09-27 10:48:33
     run_agent_refreshed
     dnf -q versionlock clear
     [ "${lines[2]}" -eq $(( before - 1 )) ]
+}
+
+@test "Metadata refresh time follows makecache (real package manager)" {
+    if [[ "${DNF_AGENT_TEST_ALLOW_UPGRADE:-}" != "1" ]]; then
+        skip "Set DNF_AGENT_TEST_ALLOW_UPGRADE=1 to allow changing the metadata cache"
+    fi
+    local pm=dnf
+    command -v dnf5 &>/dev/null && pm=dnf5
+
+    find /var/cache/dnf /var/cache/libdnf5 -name '*primary.xml*' -exec touch -d @1000000000 {} + 2>/dev/null || true
+    run_agent_refreshed
+    [ "${lines[5]}" = "1000000000" ]
+
+    # Re-checking unchanged metadata must count as a refresh
+    "$pm" -q makecache --refresh
+    run agent
+    (( $(date +%s) - lines[5] < 600 ))
 }
 
 # =============================================================================

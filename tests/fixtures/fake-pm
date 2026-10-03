@@ -5,25 +5,40 @@
 # The first two non-option arguments form a key (e.g. "check-upgrade",
 # "history-list"), suffixed with "-security" when --security is passed.
 # Prints $FAKE_PM_DIR/<key>.out if present and exits with the code in
-# $FAKE_PM_DIR/<key>.rc (default 0). Each call's arguments are appended to
-# $FAKE_PM_DIR/<key>.args.
+# $FAKE_PM_DIR/<key>.rc (default 0). If the directory $FAKE_PM_DIR/<key>.d
+# exists, prints the file in it named after each further argument instead
+# (e.g. "history info 3 2" prints history-info.d/3 and history-info.d/2).
+# Each call's arguments are appended to $FAKE_PM_DIR/<key>.args.
 
 : "${FAKE_PM_DIR:?FAKE_PM_DIR must point at the fake responses}"
 
 words=()
+extra=()
 suffix=""
 for arg in "$@"; do
     case "$arg" in
         --security) suffix="-security" ;;
         -*) ;;
-        *) (( ${#words[@]} < 2 )) && words+=("$arg") ;;
+        *)
+            if (( ${#words[@]} < 2 )); then
+                words+=("$arg")
+            else
+                extra+=("$arg")
+            fi
+            ;;
     esac
 done
 
 key="$(IFS=-; echo "${words[*]}")${suffix}"
 echo "$*" >> "${FAKE_PM_DIR}/${key}.args"
 
-if [[ -f "${FAKE_PM_DIR}/${key}.out" ]]; then
+if [[ -d "${FAKE_PM_DIR}/${key}.d" ]]; then
+    for arg in "${extra[@]}"; do
+        if [[ -f "${FAKE_PM_DIR}/${key}.d/${arg}" ]]; then
+            cat "${FAKE_PM_DIR}/${key}.d/${arg}"
+        fi
+    done
+elif [[ -f "${FAKE_PM_DIR}/${key}.out" ]]; then
     cat "${FAKE_PM_DIR}/${key}.out"
 fi
 rc=0
