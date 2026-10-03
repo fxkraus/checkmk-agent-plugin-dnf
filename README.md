@@ -126,6 +126,8 @@ Copy the file tree under `lib/` into
 | Last update state | Service state for the "too old" / "not found" condition (only while updates are pending) | WARN |
 | Maximum age of repository metadata | Days after which stale metadata (makecache timer not running) triggers an alert | 7 |
 | State when repository metadata is too old | Service state for the stale metadata condition | WARN |
+| Maximum time without a completed background refresh | Hours after which cached counts that no refresh has completed for trigger an alert | 2 |
+| State when no background refresh has completed | Service state for that condition | WARN |
 
 ### Agent Bakery
 
@@ -155,6 +157,12 @@ In both modes a change shows up after **two** plugin runs: the first starts
 the refresh, the second serves its result. With an interval this can take
 up to twice the interval, so keep it short (the plugin itself is cheap; the
 expensive queries only run when the package state changes).
+
+If a refresh fails (the package manager returns an error) or does not finish
+within 5 minutes, the plugin waits 15 minutes before the next attempt instead
+of retrying on every agent call. The service goes WARN (configurable) when no
+refresh has completed for 2 hours, because the cached counts may be outdated
+by then.
 
 | Parameter | Valid range |
 |---|---|

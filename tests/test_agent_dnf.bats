@@ -23,6 +23,7 @@ setup() {
     # Path to the agent plugin
     AGENT_PLUGIN="${BATS_TEST_DIRNAME}/../agents/plugins/dnf"
     RESULT_CACHE="${MK_VARDIR}/cache/dnf_updates.cache"
+    PENDING="${MK_VARDIR}/cache/dnf_refresh_pending.cache"
     STUB_BIN=""
 }
 
@@ -66,7 +67,7 @@ use_fake_pm() {
     mkdir -p "${FAKE_PM_DIR}" "${STUB_BIN}"
 
     local tool
-    for tool in bash awk cat cut date flock grep head ls mkdir mv paste rm sed setsid sort stat tail timeout uname; do
+    for tool in bash awk cat cut date flock grep head ls mkdir mv paste rm sed setsid sort stat tail timeout touch uname; do
         ln -s "$(command -v "$tool")" "${STUB_BIN}/${tool}"
     done
     ln -s "${BATS_TEST_DIRNAME}/fixtures/fake-pm" "${STUB_BIN}/$1"
@@ -163,8 +164,8 @@ teardown() {
     run_agent_refreshed
     [ "$status" -eq 0 ]
 
-    # Section header + 5 data lines
-    [ "${#lines[@]}" -eq 6 ]
+    # Section header + 6 data lines
+    [ "${#lines[@]}" -eq 7 ]
 }
 
 @test "Reboot required line is yes or no" {
@@ -233,7 +234,7 @@ teardown() {
 # =============================================================================
 # Package manager output parsing (fake package manager, runs anywhere on Linux)
 # Output lines: [0] header, [1] reboot, [2] updates, [3] security,
-# [4] last update, [5] metadata refresh
+# [4] last update, [5] metadata refresh, [6] refresh pending since
 # =============================================================================
 
 @test "dnf5: update count ignores wrapped and obsoleting lines" {
@@ -265,7 +266,7 @@ new-pkg.x86_64                     2-1.fc42       updates
     [[ "${lines[3]}" =~ ^0\ ?$ ]]
 }
 
-@test "Failed query is served as -1 and retried on the next run" {
+@test "Failed query is served as -1 and retried after the backoff" {
     use_fake_pm dnf5
     fake_pm_reply check-upgrade 1
     fake_pm_reply check-upgrade-security 1
@@ -273,21 +274,70 @@ new-pkg.x86_64                     2-1.fc42       updates
     [ "$status" -eq 0 ]
     [ "${lines[2]}" = "-1" ]
     [ "${lines[3]}" = "-1" ]
-    # The fingerprint isn't stored, so the next agent run starts a new refresh
     [ ! -s "${MK_VARDIR}/cache/dnf_pkg_state.cache" ]
+    [[ "${lines[6]}" =~ ^[0-9]+$ ]]
 
-    # That already happened during the run above; let it finish first.
-    wait_for_refresh
+    # Within the backoff no agent run starts another refresh.
     fake_pm_reply check-upgrade 100 'bash.x86_64    5.2.37-1.fc42  updates
 '
     fake_pm_reply check-upgrade-security 0
+    run agent
+    sleep 1
+    wait_for_refresh
+    # Only the call from the first refresh
+    [ "$(grep -c . "${FAKE_PM_DIR}/check-upgrade.args")" -eq 1 ]
+    grep -qx -- -1 "${RESULT_CACHE}"
+
+    # Once it has passed, the next run retries.
+    touch -d '-16 minutes' "${PENDING}"
     run agent
     for (( i = 0; i < 50; i++ )); do
         grep -qx 1 "${RESULT_CACHE}" && break
         sleep 0.2
     done
+    wait_for_refresh
     run agent
     [ "${lines[2]}" = "1" ]
+    [ "${lines[6]}" = "-1" ]
+    [ ! -e "${PENDING}" ]
+}
+
+@test "Pending refresh reports when the first unfinished one started" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 1
+    fake_pm_reply check-update-security 1
+    echo 1000 > "${PENDING}"
+    touch -d '-16 minutes' "${PENDING}"
+    run_agent_refreshed
+    [ "$status" -eq 0 ]
+    [ "${lines[6]}" = "1000" ]
+}
+
+@test "An unfinished refresh blocks new ones until the backoff has passed" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    agent --refresh
+    # A refresh that was killed (timeout) leaves the marker and a stale fingerprint.
+    echo 1000 > "${PENDING}"
+    : > "${MK_VARDIR}/cache/dnf_pkg_state.cache"
+    rm -f "${FAKE_PM_DIR}/check-update.args"
+
+    run agent
+    sleep 1
+    wait_for_refresh
+    [ "${lines[6]}" = "1000" ]
+    [ ! -e "${FAKE_PM_DIR}/check-update.args" ]
+}
+
+@test "A completed refresh clears the pending marker" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    run_agent_refreshed
+    [ "$status" -eq 0 ]
+    [ "${lines[6]}" = "-1" ]
+    [ ! -e "${PENDING}" ]
 }
 
 @test "dnf: plugins stay enabled so versionlock is honoured" {
@@ -352,7 +402,7 @@ new-pkg.x86_64                     2-1.fc42       updates
 
     wait_for_file "${RESULT_CACHE}"
     run agent
-    [ "${#lines[@]}" -eq 6 ]
+    [ "${#lines[@]}" -eq 7 ]
     [ "${lines[2]}" = "1" ]
 }
 
@@ -382,7 +432,7 @@ new-pkg.x86_64                     2-1.fc42       updates
 
     run agent
     [ "$status" -eq 0 ]
-    [ "${#lines[@]}" -eq 6 ]
+    [ "${#lines[@]}" -eq 7 ]
     [ "${lines[2]}" = "0" ]
 }
 

@@ -23,6 +23,11 @@ description:
  goes {WARN} by default if the newest repository metadata refresh is older
  than 7 days, because pending updates may then be missed.
 
+ The update counts are cached on the host and recomputed in the background
+ when the package state changes. The check goes {WARN} by default if no
+ background refresh has completed for 2 hours, because the counts may then be
+ outdated.
+
  The check goes {CRIT} by default if a reboot is required after a kernel
  update. This state can be overridden via a WATO rule.
 

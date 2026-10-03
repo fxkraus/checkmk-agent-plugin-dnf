@@ -12,9 +12,10 @@ Example agent output:
     4 kernel,glibc,openssl
     1626252300
     1626338700
+    -1
 
-The last line (newest repository metadata refresh) is missing from older
-agent plugins.
+The last two lines (newest repository metadata refresh, start of the oldest
+unfinished background refresh) are missing from older agent plugins.
 """
 #
 # Copyright 2015, Henri Wahl <h.wahl@ifw-dresden.de>
@@ -54,6 +55,7 @@ class DnfSection(NamedTuple):
     security_packages_list: str | None = None
     last_update_timestamp: int = -1
     metadata_timestamp: int = -1
+    refresh_pending_since: int = -1
     error_message: str | None = None
 
 
@@ -79,6 +81,7 @@ def parse_dnf(string_table: Sequence[Sequence[str]]) -> DnfSection:
     security_packages_list: str | None = None
     last_update_timestamp = -1
     metadata_timestamp = -1
+    refresh_pending_since = -1
 
     with contextlib.suppress(IndexError, ValueError):
         packages = int(string_table[1][0])
@@ -96,6 +99,9 @@ def parse_dnf(string_table: Sequence[Sequence[str]]) -> DnfSection:
     with contextlib.suppress(IndexError, ValueError):
         metadata_timestamp = int(string_table[4][0])
 
+    with contextlib.suppress(IndexError, ValueError):
+        refresh_pending_since = int(string_table[5][0])
+
     return DnfSection(
         reboot_required=reboot_required,
         packages=packages,
@@ -103,6 +109,7 @@ def parse_dnf(string_table: Sequence[Sequence[str]]) -> DnfSection:
         security_packages_list=security_packages_list,
         last_update_timestamp=last_update_timestamp,
         metadata_timestamp=metadata_timestamp,
+        refresh_pending_since=refresh_pending_since,
     )
 
 
@@ -202,6 +209,19 @@ def _check_metadata_age(params: Mapping[str, object], section: DnfSection) -> Ch
         )
 
 
+def _check_refresh_pending(params: Mapping[str, object], section: DnfSection) -> CheckResult:
+    """The counts are cached; a refresh that never completes would freeze them."""
+    if section.refresh_pending_since < 0:
+        return
+
+    age = max(time() - section.refresh_pending_since, 0)
+    if age >= int(params.get("refresh_pending_max_age", 2)) * 3600:
+        yield Result(
+            state=State(int(params.get("refresh_pending_state", 1))),
+            summary=f"Update information may be outdated: no background refresh has completed for {render.timespan(age)}",
+        )
+
+
 def check_dnf(params: Mapping[str, object], section: DnfSection) -> CheckResult:
     """Evaluate available DNF updates against configurable thresholds."""
     if section.error_message:
@@ -215,6 +235,7 @@ def check_dnf(params: Mapping[str, object], section: DnfSection) -> CheckResult:
     yield from _check_updates(params, section)
     yield from _check_last_update(params, section)
     yield from _check_metadata_age(params, section)
+    yield from _check_refresh_pending(params, section)
 
     if section.reboot_required:
         yield Result(state=State(int(params.get("reboot_req", 2))), summary="Reboot required")
@@ -236,6 +257,8 @@ check_plugin_dnf = CheckPlugin(
         "last_update_state": 1,  # WARN
         "metadata_max_age": 7,
         "metadata_age_state": 1,  # WARN
+        "refresh_pending_max_age": 2,
+        "refresh_pending_state": 1,  # WARN
         "reboot_req": 2,  # CRIT
     },
     check_ruleset_name="dnf",

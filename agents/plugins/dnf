@@ -12,11 +12,14 @@
 #   Line 3: Number of security updates [-1 error, -2 unsupported] [comma-separated list]
 #   Line 4: Unix timestamp of last update (-1 if unknown)
 #   Line 5: Unix timestamp of the newest repository metadata refresh (-1 if none)
+#   Line 6: Unix timestamp since when no background refresh has completed
+#           (-1 if the last one completed)
 #
 # Lines 2-4 come from a cache so the agent never waits on dnf. When the
 # package-manager cache changes, a detached background run (--refresh)
-# recomputes them within REFRESH_TIMEOUT. Lines 1 and 5 are computed on every
-# run.
+# recomputes them within REFRESH_TIMEOUT. After a failed or unfinished
+# refresh, the next one starts after RETRY_INTERVAL at the earliest. Lines 1,
+# 5 and 6 are computed on every run.
 #
 # Copyright 2015, Henri Wahl <h.wahl@ifw-dresden.de>
 # Copyright 2018, Moritz Schlarb <schlarbm@uni-mainz.de>
@@ -40,6 +43,9 @@ readonly REFRESH_TIMEOUT=300
 # Limit when setsid/flock are missing and the refresh has to run inline;
 # stays below Checkmk's 60 s agent timeout
 readonly INLINE_REFRESH_TIMEOUT=45
+# Minimum time between refresh attempts while the last one failed or did not
+# finish, so a persistent dnf failure doesn't run dnf on every agent call
+readonly RETRY_INTERVAL=900
 # dnf5 transactions searched for the last upgrade, newest first: in total and
 # per "history info" call
 readonly HISTORY_DEPTH=500
@@ -85,6 +91,9 @@ readonly CACHE_RESULT="${CACHE_DIR}/dnf_updates.cache"
 readonly CACHE_RESULT_TMP="${CACHE_RESULT}.tmp"
 readonly CACHE_PKG_STATE="${CACHE_DIR}/dnf_pkg_state.cache"
 readonly CACHE_LOCK="${CACHE_DIR}/dnf_refresh.lock"
+# Exists from the start of a refresh until one completes. Holds the start time
+# of the first unsuccessful attempt; its mtime is the latest attempt.
+readonly CACHE_PENDING="${CACHE_DIR}/dnf_refresh_pending.cache"
 readonly LEGACY_CACHE_FILES=("${CACHE_DIR}/yum_result.cache" "${CACHE_DIR}/yum_uptime.cache")
 
 # --- Cache file helpers ---
@@ -292,11 +301,21 @@ get_pkg_state_fingerprint() {
 refresh() {
     init_cache_file "$CACHE_LOCK"
     validate_cache_file "$CACHE_RESULT_TMP"
+    validate_cache_file "$CACHE_PENDING"
 
     # Only one refresh at a time; a concurrent one simply exits.
     if command -v flock >/dev/null 2>&1; then
         exec 9>>"$CACHE_LOCK"
         flock -n 9 || return 0
+    fi
+
+    # Removed again only when this refresh completes. Until then the agent
+    # backs off and reports since when the result has not been refreshed.
+    if [[ -s "$CACHE_PENDING" ]]; then
+        touch "$CACHE_PENDING"
+    else
+        rm -f "$CACHE_PENDING"
+        (set -o noclobber; printf '%(%s)T\n' -1 > "$CACHE_PENDING") 2>/dev/null || true
     fi
 
     # Take the fingerprint first, so changes made while the queries run
@@ -313,13 +332,32 @@ refresh() {
         return 0
     fi
 
-    # Serve a failure (-1) but clear the fingerprint so the next agent run
-    # retries.
+    # Serve a failure (-1) but clear the fingerprint so the agent retries
+    # once the backoff has passed.
     if [[ "$updates" == "-1" || "$security_info" == "-1" ]]; then
         : > "$CACHE_PKG_STATE"
         return 0
     fi
     printf '%s\n' "$state" > "$CACHE_PKG_STATE"
+    rm -f "$CACHE_PENDING"
+}
+
+# True while the last refresh attempt failed or may still be running and
+# started less than RETRY_INTERVAL ago.
+refresh_backoff() {
+    local last_attempt now
+    last_attempt=$(stat -c %Y "$CACHE_PENDING" 2>/dev/null) || return 1
+    printf -v now '%(%s)T' -1
+    (( now - last_attempt < RETRY_INTERVAL ))
+}
+
+# --- Start of the oldest refresh that has not completed (-1 if none) ---
+
+get_refresh_pending_since() {
+    local since
+    since=$(cat "$CACHE_PENDING" 2>/dev/null) || true
+    [[ "$since" =~ ^[0-9]+$ ]] || since=-1
+    echo "$since"
 }
 
 # Checkmk's socket-activated check-mk-agent@.service kills every process left
@@ -356,6 +394,7 @@ main() {
 
     init_cache_file "$CACHE_RESULT"
     init_cache_file "$CACHE_PKG_STATE"
+    validate_cache_file "$CACHE_PENDING"
 
     if [[ "${1:-}" == "--refresh" ]]; then
         refresh
@@ -371,7 +410,8 @@ main() {
     cached_state=$(cat "$CACHE_PKG_STATE" 2>/dev/null) || true
     : "${cached_state:=}"
 
-    if [[ "$current_state" != "$cached_state" || ! -s "$CACHE_PKG_STATE" || ! -s "$CACHE_RESULT" ]]; then
+    if [[ "$current_state" != "$cached_state" || ! -s "$CACHE_PKG_STATE" || ! -s "$CACHE_RESULT" ]] \
+        && ! refresh_backoff; then
         start_refresh
     fi
 
@@ -379,6 +419,7 @@ main() {
         check_reboot_required
         cat "$CACHE_RESULT"
         get_metadata_timestamp
+        get_refresh_pending_since
     else
         echo "ERROR: First update check is running in the background, results follow on the next agent run"
     fi
