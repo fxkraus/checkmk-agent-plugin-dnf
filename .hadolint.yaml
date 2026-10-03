@@ -1,7 +1,8 @@
 # hadolint configuration — https://github.com/hadolint/hadolint
 ignored:
   # Pinning distro package versions in the devcontainer images breaks builds
-  # whenever the distro publishes updates; the base images are pinned and
-  # updated by Dependabot instead.
+  # whenever the distro publishes updates. The AlmaLinux base image is pinned
+  # to a minor release and updated by Dependabot; the Checkmk images float on
+  # 2.5.0-latest on purpose (see .github/dependabot.yml).
   - DL3008  # apt-get install without version pins
   - DL3041  # dnf install without version pins

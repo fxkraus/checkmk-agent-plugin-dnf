@@ -143,6 +143,19 @@ choices:
 Rules from older versions are migrated on upgrade: a rule without an interval
 becomes "Deploy without interval", and intervals below 60 s are raised to 60 s.
 
+**How the plugin runs.** Without an interval, the agent runs the plugin on
+every call. The plugin answers from its cache at once and, when the package
+state has changed, starts a background refresh (on systemd hosts in a
+transient unit, see [Features](#features)). With an interval, the agent runs
+the plugin asynchronously (on systemd hosts in the long-lived
+`check-mk-agent-async.service`) and serves the plugin's last output in
+between.
+
+In both modes a change shows up after **two** plugin runs: the first starts
+the refresh, the second serves its result. With an interval this can take
+up to twice the interval, so keep it short (the plugin itself is cheap; the
+expensive queries only run when the package state changes).
+
 | Parameter | Valid range |
 |---|---|
 | Execution interval | ≥ 60 s |
@@ -189,8 +202,6 @@ build/
   scripts/post-create.sh         # Symlinks plugin into CMK site
   scripts/deploy-plugin.sh       # Redeploy plugin + reload CMK
   scripts/discover-services.sh   # Trigger service discovery via REST API
-.vscode/
-  tasks.json                     # VS Code task definitions
 tests/
   run-pytest.sh                  # Runs pytest with the Checkmk interpreter
   test_check_dnf.py              # Check plugin unit tests (pytest)
@@ -311,17 +322,6 @@ shared Docker network:
 
 - **Web UI:** `http://localhost:5000/cmk/`
 - **Login:** `cmkadmin` / `cmk`
-
-**VS Code Tasks** (run via `Terminal → Run Task…`):
-
-| Task | Description |
-| --- | --- |
-| Build MKP Package | Build the `.mkp` extension package |
-| Deploy Plugin (Server-Side) | Symlink plugin into the CMK site and reload |
-| Discover Services | Trigger service discovery on the AlmaLinux host |
-| Deploy + Discover | Deploy and discover in one step |
-| Run Linters / Tests | Lint and test targets from the Makefile |
-| Reload CheckMK | Reload the CMK core configuration |
 
 **Makefile DevContainer targets** (run inside the devcontainer):
 
