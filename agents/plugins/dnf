@@ -26,6 +26,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 # Set the version to be captured in newer versions of CheckMK inventory
+# shellcheck disable=SC2034
 CMK_VERSION="0.0.0"
 
 # Disable globbing to prevent accidental pathname expansion
@@ -39,6 +40,10 @@ readonly REFRESH_TIMEOUT=300
 readonly INLINE_REFRESH_TIMEOUT=45
 # Number of recent dnf5 transactions searched for the last upgrade
 readonly HISTORY_DEPTH=20
+# dnf 4/yum plugins stay enabled so versionlock (a plugin there) is honoured,
+# like dnf5 does natively. The RHEL subscription plugins may contact the
+# entitlement server even in cache-only mode, so they are disabled.
+readonly DNF4_PLUGIN_ARGS=(--disableplugin=subscription-manager --disableplugin=product-id)
 
 # --- Output error and exit gracefully ---
 # Exit 0 so the Checkmk agent continues processing other plugins.
@@ -62,6 +67,14 @@ if ! mkdir -p "${CACHE_DIR}"; then
     die "Unable to create cache directory: ${CACHE_DIR}"
 fi
 
+# Only the agent's own user may write to the cache directory; otherwise
+# someone else could plant symlinks that the agent (usually root) follows.
+read -r cache_dir_uid cache_dir_mode < <(stat -c '%u %a' "${CACHE_DIR}" 2>/dev/null) || true
+if [[ -L "${CACHE_DIR}" || ! -d "${CACHE_DIR}" || "${cache_dir_uid:-}" != "${EUID}" ]] \
+    || (( 8#${cache_dir_mode:-777} & 8#022 )); then
+    die "Cache directory must be a directory owned by UID ${EUID} and not group- or world-writable: ${CACHE_DIR}"
+fi
+
 # Result lines 2-4. Named differently from the pre-async 4-line
 # yum_result.cache so an upgraded plugin never serves the old format.
 readonly CACHE_RESULT="${CACHE_DIR}/dnf_updates.cache"
@@ -82,35 +95,15 @@ validate_cache_file() {
     fi
 }
 
+# Validate before creating, so a planted (dangling) symlink is never followed.
+# noclobber creates the file with O_EXCL.
 init_cache_file() {
     local filepath="$1"
-    local default_content="${2:-}"
+    validate_cache_file "$filepath"
     if [[ ! -e "$filepath" ]]; then
-        echo -n "$default_content" > "$filepath"
+        (set -o noclobber; : > "$filepath") 2>/dev/null || true
     fi
     validate_cache_file "$filepath"
-}
-
-# --- Detect distribution ---
-
-detect_distribution() {
-    # Variables from /etc/os-release (SC2154)
-    # shellcheck disable=SC2154
-    if [[ -f /etc/os-release ]]; then
-        # shellcheck source=/dev/null
-        . /etc/os-release
-        MAJOR_VERSION="${VERSION_ID%%.*}"
-
-        # Normalise to RHEL family using ID_LIKE
-        if [[ "${ID_LIKE:-}" == *rhel* ]] || [[ "${ID}" == "rhel" ]]; then
-            DISTRO_ID="rhel"
-        else
-            DISTRO_ID="${ID}"
-        fi
-    else
-        MAJOR_VERSION=0
-        DISTRO_ID="unknown"
-    fi
 }
 
 # --- Detect package manager ---
@@ -129,18 +122,23 @@ detect_package_manager() {
 
 # --- Check if kernel update requires reboot ---
 
+# The newest kernel is the highest version, not the last one installed: a
+# fallback kernel installed later must not ask for a reboot.
 check_reboot_required() {
-    local kernel_package running_kernel latest_kernel
+    local config owners kernel_package running_kernel latest_kernel
 
-    kernel_package=$(rpm -qf --qf "%{NAME}" "/boot/config-$(uname -r)" 2>/dev/null) || true
-    if [[ -z "$kernel_package" ]]; then
+    config="/boot/config-$(uname -r)"
+    # rpm prints "not owned by any package" to stdout, so check the exit code.
+    # Several packages may own the file; the first one is enough.
+    if ! owners=$(rpm -qf --qf '%{NAME} %{VERSION}-%{RELEASE}\n' "$config" 2>/dev/null) \
+        || [[ -z "$owners" ]]; then
         echo "no"
         return
     fi
+    read -r kernel_package running_kernel <<< "$owners"
 
-    running_kernel=$(rpm -qf --qf "%{VERSION}-%{RELEASE}\n" "/boot/config-$(uname -r)" 2>/dev/null) || true
-    latest_kernel=$(rpm -q --qf "%{INSTALLTIME} %{VERSION}-%{RELEASE}\n" "$kernel_package" 2>/dev/null \
-        | sort -nr | head -n1 | cut -d' ' -f2-) || true
+    latest_kernel=$(rpm -q --qf '%{VERSION}-%{RELEASE}\n' "$kernel_package" 2>/dev/null \
+        | sort -V | tail -n1) || true
 
     if [[ "$running_kernel" == "$latest_kernel" ]]; then
         echo "no"
@@ -161,7 +159,7 @@ list_upgrades() {
 
     case "$PKG_MGR" in
         dnf5)    cmd=(dnf5 -C --quiet check-upgrade) ;;
-        dnf|yum) cmd=("$PKG_MGR" -C --quiet --noplugins check-update) ;;
+        dnf|yum) cmd=("$PKG_MGR" -C --quiet "${DNF4_PLUGIN_ARGS[@]}" check-update) ;;
     esac
 
     output=$("${cmd[@]}" "$@" 2>/dev/null) || rc=$?
@@ -236,7 +234,7 @@ get_last_update_timestamp() {
             timestamp=$(get_last_upgrade_dnf5) || true
             ;;
         dnf|yum)
-            timestamp=$("$PKG_MGR" -C --quiet --noplugins history list 2>/dev/null \
+            timestamp=$("$PKG_MGR" -C --quiet "${DNF4_PLUGIN_ARGS[@]}" history list 2>/dev/null \
                 | awk '{if(NR>2)print}' \
                 | grep -E ' U | Upgrade| Update' \
                 | head -n1 \
@@ -250,24 +248,26 @@ get_last_update_timestamp() {
 
 # --- Package state fingerprint ---
 # Changes when repo metadata is refreshed (repomd.xml per repo; dnf5 keeps its
-# cache in /var/cache/libdnf5) or packages are installed or removed (rpmdb,
-# including plain rpm -U). Solver caches (*.solv) are left out because dnf
-# rewrites them during read-only queries.
+# cache in /var/cache/libdnf5), packages are installed or removed (rpmdb,
+# including plain rpm -U) or the versionlock list changes. Solver caches
+# (*.solv) are left out because dnf rewrites them during read-only queries.
 
 get_pkg_state_fingerprint() {
-    local repo_metadata rpmdb
+    local repo_metadata rpmdb versionlock
     repo_metadata=$(find /var/cache/dnf /var/cache/yum /var/cache/libdnf5 \
         -name repomd.xml -printf '%p %T@ %s\n' 2>/dev/null) || true
     rpmdb=$(find /var/lib/rpm /usr/lib/sysimage/rpm -maxdepth 1 \
         \( -name Packages -o -name rpmdb.sqlite -o -name rpmdb.sqlite-wal \) \
         -printf '%p %T@ %s\n' 2>/dev/null) || true
-    sort <<< "${repo_metadata}"$'\n'"${rpmdb}"
+    versionlock=$(find /etc/dnf/plugins/versionlock.list /etc/yum/pluginconf.d/versionlock.list \
+        /etc/dnf/versionlock.toml -maxdepth 0 -printf '%p %T@ %s\n' 2>/dev/null) || true
+    sort <<< "${repo_metadata}"$'\n'"${rpmdb}"$'\n'"${versionlock}"
 }
 
 # --- Refresh the cached result (runs detached via --refresh) ---
 
 refresh() {
-    validate_cache_file "$CACHE_LOCK"
+    init_cache_file "$CACHE_LOCK"
     validate_cache_file "$CACHE_RESULT_TMP"
 
     # Only one refresh at a time; a concurrent one simply exits.
@@ -284,8 +284,11 @@ refresh() {
     security_info=$(count_security_updates)
     last_timestamp=$(get_last_update_timestamp)
 
-    printf '%s\n' "$updates" "$security_info" "$last_timestamp" > "$CACHE_RESULT_TMP"
-    mv -f "$CACHE_RESULT_TMP" "$CACHE_RESULT"
+    rm -f "$CACHE_RESULT_TMP"
+    if ! (set -o noclobber; printf '%s\n' "$updates" "$security_info" "$last_timestamp" > "$CACHE_RESULT_TMP") \
+        || ! mv -f "$CACHE_RESULT_TMP" "$CACHE_RESULT"; then
+        return 0
+    fi
 
     # Serve a failure (-1) but clear the fingerprint so the next agent run
     # retries.
@@ -310,7 +313,6 @@ start_refresh() {
 # --- Main ---
 
 main() {
-    detect_distribution
     detect_package_manager
 
     init_cache_file "$CACHE_RESULT"
