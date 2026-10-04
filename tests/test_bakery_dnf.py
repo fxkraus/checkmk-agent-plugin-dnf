@@ -47,7 +47,7 @@ def test_get_dnf_files(bakery: ModuleType, conf: dict[str, object], expected: li
 
 @pytest.mark.parametrize(
     "legacy",
-    [{}, {"interval": None}, {"interval": 0}, {"interval": 30}, {"interval": 7200}, {"deploy": "nointerval"}],
+    [{}, {"interval": None}, {"interval": 0}, {"interval": "3600"}, {"interval": 30}, {"interval": 7200}, {"deploy": "nointerval"}],
 )
 def test_legacy_values_bake_like_their_migration(bakery: ModuleType, legacy: dict[str, object]) -> None:
     """Unmigrated rule values must deploy exactly what the ruleset migration turns them into."""

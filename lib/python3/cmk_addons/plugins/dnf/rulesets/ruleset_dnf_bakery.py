@@ -19,6 +19,7 @@ from cmk.rulesets.v1.form_specs import (
 )
 from cmk.rulesets.v1.rule_specs import AgentConfig, Topic
 
+# Same floor as MIN_INTERVAL in the bakery plugin
 MIN_INTERVAL = 60.0
 
 
@@ -36,7 +37,7 @@ def _migrate_legacy_config(value: object) -> Mapping[str, object]:
             return {"deploy": ("nointerval", None)}
         return value
     interval = value.get("interval")
-    if interval is None or interval <= 0:
+    if not isinstance(interval, int | float) or interval <= 0:
         return {"deploy": ("sync", None)}
     return {"deploy": ("interval", max(float(interval), MIN_INTERVAL))}
 
