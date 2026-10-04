@@ -50,6 +50,9 @@ readonly REFRESH_TIMEOUT=300
 # Limit when setsid/flock are missing and the refresh has to run inline;
 # stays below Checkmk's 60 s agent timeout
 readonly INLINE_REFRESH_TIMEOUT=45
+# Limit for each command the agent run itself waits on (rpm, systemd-run), so
+# a hanging rpm database or systemd doesn't block the whole agent
+readonly QUERY_TIMEOUT=5
 # Minimum time between refresh attempts while the last one failed or did not
 # finish, so a persistent dnf failure doesn't run dnf on every agent call
 readonly RETRY_INTERVAL=900
@@ -161,7 +164,7 @@ rpm_newer_version_exists() {
     for version in "$@"; do
         [[ "$version" =~ $valid ]] && list+="'${version}',"
     done
-    newer=$(rpm --eval "%{lua: local n = 0; for _, v in ipairs({${list}}) do if rpm.vercmp(v, '${base}') > 0 then n = n + 1 end end; print(n)}" 2>/dev/null) || true
+    newer=$(timeout "${QUERY_TIMEOUT}s" rpm --eval "%{lua: local n = 0; for _, v in ipairs({${list}}) do if rpm.vercmp(v, '${base}') > 0 then n = n + 1 end end; print(n)}" 2>/dev/null) || true
     [[ "$newer" =~ ^[1-9] ]]
 }
 
@@ -180,7 +183,7 @@ check_reboot_required() {
     # rpm prints "not owned by any package" to stdout, so check the exit code.
     # Several packages may own the file; the first one is enough.
     for file in "/lib/modules/${release}/vmlinuz" "/boot/config-${release}"; do
-        if owners=$(rpm -qf --qf '%{NAME} %{VERSION}-%{RELEASE}\n' "$file" 2>/dev/null) \
+        if owners=$(timeout "${QUERY_TIMEOUT}s" rpm -qf --qf '%{NAME} %{VERSION}-%{RELEASE}\n' "$file" 2>/dev/null) \
             && [[ -n "$owners" ]]; then
             break
         fi
@@ -192,7 +195,7 @@ check_reboot_required() {
     fi
     read -r kernel_package running_kernel <<< "$owners"
 
-    mapfile -t installed < <(rpm -q --qf '%{VERSION}-%{RELEASE}\n' "$kernel_package" 2>/dev/null || true)
+    mapfile -t installed < <(timeout "${QUERY_TIMEOUT}s" rpm -q --qf '%{VERSION}-%{RELEASE}\n' "$kernel_package" 2>/dev/null || true)
 
     if rpm_newer_version_exists "$running_kernel" "${installed[@]}"; then
         echo "yes"
@@ -443,8 +446,9 @@ get_refresh_pending_since() {
 # Checkmk's socket-activated check-mk-agent@.service kills every process left
 # in its cgroup when the agent exits, and setsid doesn't leave the cgroup. So
 # on systemd the refresh runs in its own transient unit. systemd-run fails
-# without a running systemd, or when the unit already exists (a refresh is
-# running); then fall back to setsid, where flock skips a duplicate refresh.
+# without a running systemd, when it doesn't answer within QUERY_TIMEOUT, or
+# when the unit already exists (a refresh is running); then fall back to
+# setsid, where flock skips a duplicate refresh.
 # setsid puts the refresh in its own session, so the agent neither waits for
 # it nor kills it when the plugin run ends; timeout bounds the whole refresh.
 start_refresh() {
@@ -452,7 +456,7 @@ start_refresh() {
     [[ "$self" == /* ]] || self="${PWD}/${self}"
 
     if command -v systemd-run >/dev/null 2>&1 \
-        && systemd-run --no-block --collect --quiet --no-ask-password \
+        && timeout "${QUERY_TIMEOUT}s" systemd-run --no-block --collect --quiet --no-ask-password \
             --unit=cmk-agent-dnf-refresh \
             --property=RuntimeMaxSec="${REFRESH_TIMEOUT}" \
             --setenv=MK_VARDIR="${MK_VARDIR}" \

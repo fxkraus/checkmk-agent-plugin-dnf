@@ -85,7 +85,10 @@ it is older than 7 days (configurable).
   when the agent exits; elsewhere it is detached with `setsid`. The first run
   after installing reports "running in the background" (UNKNOWN) until that
   refresh finishes. Hosts without `setsid`/`flock` (util-linux) refresh
-  inline, capped at 45 s. The cache directory
+  inline, capped at 45 s. The few commands the agent run itself waits on
+  (`rpm` for the kernel reboot check, `systemd-run`) are each capped at 5 s;
+  a hanging rpm database reports no kernel reboot rather than stalling the
+  whole agent. The cache directory
   (`$MK_VARDIR/cache`) must be owned by the agent user, `$MK_VARDIR` by the
   agent user or root, and neither may be group- or world-writable; otherwise
   the plugin reports an error. Directories the plugin creates itself get mode
