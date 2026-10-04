@@ -13,12 +13,14 @@
 # Usage: test-socket-activated-agent.sh <agent rpm> [image]
 # Needs Docker on a cgroup v2 host. The container is not privileged: systemd
 # only gets the default capabilities, tmpfs mounts for /run and a writable
-# cgroup tree (Docker mounts it read-only otherwise) for its units.
+# cgroup tree (Docker mounts it read-only otherwise) for its units. That tree
+# is the host's, so the image comes from tests/systemd/Dockerfile, pinned by
+# digest, unless one is passed.
 set -euo pipefail
 
 RPM="$(realpath "$1")"
-IMAGE="${2:-docker.io/almalinux/9-init}"
 REPO_DIR="$(realpath "$(dirname "$0")/../..")"
+IMAGE="${2:-$(docker build -q "${REPO_DIR}/tests/systemd")}"
 CACHE=/var/lib/check_mk_agent/cache/dnf_updates.cache
 
 container=$(docker run -d \
