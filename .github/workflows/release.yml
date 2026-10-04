@@ -1,7 +1,7 @@
 # Build and release the MKP package when a version tag is pushed.
-# Tags must be valid Checkmk versions: v1.2.3, v1.2.3p1 (patch), v1.2.3i1
-# (innovation) or v1.2.3b1 (beta). The build rejects anything else, e.g.
-# v1.2.3-alpha.1, which would crash the Checkmk server on install.
+# Tags must be vMAJOR.MINOR.PATCH, e.g. v1.2.3. The build rejects anything
+# else: mkp only accepts semantic versions (so not v1.2.3p1), and pre-releases
+# such as v1.2.3-alpha.1 would crash the Checkmk server on install.
 #
 # The build job only gets a read-only token and fails unless the tagged commit
 # is on main. Only the release job, which runs no build code, may write: it
@@ -115,21 +115,11 @@ jobs:
               --deny-self-hosted-runners
           done
 
-      - name: Determine pre-release flag
-        id: meta
-        run: |
-          if [[ "$GITHUB_REF_NAME" =~ [ib][0-9]+$ ]]; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Create release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          prerelease: ${{ steps.meta.outputs.prerelease }}
           # Prepended to the generated release notes
           body: "Built with the Checkmk image `${{ needs.build.outputs.base-image }}`."
           generate_release_notes: true
