@@ -335,6 +335,23 @@ new-pkg.x86_64                     2-1.fc42       updates
     [ ! -e "${FAKE_PM_DIR}/check-update.args" ]
 }
 
+@test "A pending marker dated in the future doesn't block refreshes" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    agent --refresh
+    # The clock was stepped back after the last attempt
+    echo 1000 > "${PENDING}"
+    touch -d '+1 day' "${PENDING}"
+    : > "${MK_VARDIR}/cache/dnf_pkg_state.cache"
+    rm -f "${FAKE_PM_DIR}/check-update.args"
+
+    run agent
+    wait_for_file "${FAKE_PM_DIR}/check-update.args"
+    wait_for_refresh
+    [ ! -e "${PENDING}" ]
+}
+
 @test "A completed refresh clears the pending marker" {
     use_fake_pm dnf
     fake_pm_reply check-update 0
