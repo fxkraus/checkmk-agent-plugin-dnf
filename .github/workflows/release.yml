@@ -68,8 +68,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The tag that triggered the release, not whichever tag git describe
+      # picks when the commit carries several
       - name: Run MKP packaging
-        run: docker run --rm -v "$PWD:/source" checkmk-dnf-build:latest
+        run: docker run --rm -e RELEASE_TAG="$GITHUB_REF_NAME" -v "$PWD:/source" checkmk-dnf-build:latest
 
       - name: Upload MKP
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1

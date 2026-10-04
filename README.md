@@ -532,7 +532,8 @@ Checkmk ships no `py.typed` markers, so
 
 Every commit on `main` produces an MKP, attached to the CI run as the
 artifact `dnf-mkp-<commit-sha>` (kept 90 days, version `0.0.<n>` where `<n>`
-is the number of commits). Tagged releases get a proper version.
+is the number of commits). Tagged releases get the version of the tag that
+triggered them, even if the commit carries several tags.
 
 Dependabot proposes a version only 7 days after its release (cooldown), so a
 compromised release is usually yanked first; security updates are not

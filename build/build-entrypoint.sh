@@ -43,9 +43,21 @@ cp -R "$STAGE/agents" .
 MANIFEST="$CMK/tmp/check_mk/dnf.manifest.temp"
 su - cmk -c "mkdir -p $CMK/tmp/check_mk && /omd/sites/cmk/bin/mkp template dnf > $MANIFEST"
 
-# Derive the package version: the tag of a tagged commit, otherwise the
-# number of commits, which only grows along main (needs the full history).
-TAG=$(git -C "$SOURCE" describe --exact-match --tags HEAD 2>/dev/null || true)
+# Derive the package version: the release tag (RELEASE_TAG, set by the
+# release workflow; a commit may carry several tags), else the tag of a tagged
+# commit, otherwise the number of commits, which only grows along main (needs
+# the full history).
+if [[ -n "${RELEASE_TAG:-}" ]]; then
+  TAG_COMMIT=$(git -C "$SOURCE" rev-parse --verify --quiet "refs/tags/${RELEASE_TAG}^{commit}" || true)
+  HEAD_COMMIT=$(git -C "$SOURCE" rev-parse HEAD)
+  if [[ "$TAG_COMMIT" != "$HEAD_COMMIT" ]]; then
+    echo "ERROR: release tag '$RELEASE_TAG' does not point to the checked-out commit" >&2
+    exit 1
+  fi
+  TAG="$RELEASE_TAG"
+else
+  TAG=$(git -C "$SOURCE" describe --exact-match --tags HEAD 2>/dev/null || true)
+fi
 SHALLOW=$(git -C "$SOURCE" rev-parse --is-shallow-repository)
 if [[ -n "$TAG" ]]; then
   VERSION="${TAG#v}"
