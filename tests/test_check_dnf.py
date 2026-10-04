@@ -549,6 +549,17 @@ class TestRebootHint:
     def test_no_or_unknown_hint_is_ok(self, default_params, hint):
         assert all(r.state == State.OK for r in self._results(default_params, hint=hint))
 
+    def test_unknown_hint_says_only_the_kernel_is_checked(self, default_params):
+        notices = [r.details for r in self._results(default_params, hint=None) if "needs-restarting" in r.details]
+
+        assert notices == ["Reboot hint from needs-restarting unavailable (not installed or failed), only kernel updates are detected"]
+
+    @pytest.mark.parametrize(("hint", "enabled"), [(None, False), (False, True), (True, True)])
+    def test_no_unavailable_notice_when_hint_known_or_disabled(self, default_params, hint, enabled):
+        params = {**default_params, "reboot_hint": enabled}
+
+        assert not [r for r in self._results(params, hint=hint) if "unavailable" in r.details]
+
     def test_hint_can_be_disabled(self, default_params):
         params = {**default_params, "reboot_hint": False}
 

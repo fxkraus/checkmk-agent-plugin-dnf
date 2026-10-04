@@ -261,6 +261,11 @@ def _check_reboot(params: DnfParams, section: DnfSection) -> CheckResult:
     elif section.reboot_hint and params.get("reboot_hint", True):
         updated = section.reboot_hint_packages.replace(",", ", ") if section.reboot_hint_packages else "unknown packages"
         yield Result(state=state, summary="Reboot required", details=f"Reboot required: updated since boot: {updated}")
+    elif section.reboot_hint is None and params.get("reboot_hint", True):
+        yield Result(
+            state=State.OK,
+            notice="Reboot hint from needs-restarting unavailable (not installed or failed), only kernel updates are detected",
+        )
 
 
 def check_dnf(params: DnfParams, section: DnfSection) -> CheckResult:
