@@ -402,12 +402,14 @@ refresh() {
 }
 
 # True while the last refresh attempt failed or may still be running and
-# started less than RETRY_INTERVAL ago.
+# started less than RETRY_INTERVAL ago. An attempt dated in the future (the
+# clock was stepped back) doesn't count, or it would block refreshes until
+# the clock catches up.
 refresh_backoff() {
     local last_attempt now
     last_attempt=$(stat -c %Y "$CACHE_PENDING" 2>/dev/null) || return 1
     printf -v now '%(%s)T' -1
-    (( now - last_attempt < RETRY_INTERVAL ))
+    (( now >= last_attempt && now - last_attempt < RETRY_INTERVAL ))
 }
 
 # --- Start of the oldest refresh that has not completed (-1 if none) ---
