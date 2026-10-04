@@ -503,6 +503,21 @@ new-pkg.x86_64                     2-1.fc42       updates
     [ "${lines[-1]}" = "--refresh" ]
 }
 
+@test "systemd: a hanging systemd-run doesn't block the agent" {
+    use_fake_pm dnf
+    printf '#!/bin/bash\nexec /usr/bin/sleep 30\n' > "${STUB_BIN}/systemd-run"
+    chmod +x "${STUB_BIN}/systemd-run"
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+
+    SECONDS=0
+    run agent
+    [ "$status" -eq 0 ]
+    (( SECONDS < 15 ))
+    # Falls back to setsid
+    wait_for_file "${RESULT_CACHE}"
+}
+
 @test "systemd: falls back to setsid when systemd-run fails" {
     use_fake_pm dnf
     ln -s "${BATS_TEST_DIRNAME}/fixtures/fake-systemd-run" "${STUB_BIN}/systemd-run"
@@ -809,6 +824,22 @@ Begin time     : 2026-09-27 10:48:33
     echo "/boot/config-5.14.0-503.9.1.el9.x86_64" > "${FAKE_PM_DIR}/owned-paths"
     run_agent_refreshed
     [ "${lines[1]}" = "yes" ]
+}
+
+@test "Reboot: a hanging rpm doesn't block the agent" {
+    use_fake_pm dnf
+    fake_kernel 5.14.0-503.9.1.el9 5.14.0-503.9.1.el9 5.14.0-503.10.1.el9
+    agent --refresh
+    rm -f "${STUB_BIN}/rpm"
+    printf '#!/bin/bash\nexec /usr/bin/sleep 30\n' > "${STUB_BIN}/rpm"
+    chmod +x "${STUB_BIN}/rpm"
+
+    SECONDS=0
+    run agent
+    [ "$status" -eq 0 ]
+    (( SECONDS < 15 ))
+    [ "${lines[1]}" = "no" ]
+    [ "${lines[2]}" = "0" ]
 }
 
 @test "Reboot: a kernel config owned by no package needs no reboot" {
