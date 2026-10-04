@@ -152,19 +152,21 @@ detect_package_manager() {
     fi
 }
 
-# --- True if rpm orders any further version after the first one ---
+# --- True if rpm orders any further VERSION-RELEASE after the first one ---
 # sort -V is not rpm's order: it puts the GA kernel 4.18.0-553.el8_10 after
-# 4.18.0-553.5.1.el8_10. rpm's Lua gets the versions as string literals, so
-# only the characters rpm allows in a version are passed on.
+# 4.18.0-553.5.1.el8_10. Version and release are compared separately, like
+# rpm orders packages; rpm 4.14 (EL8) compares rpm.vercmp's arguments as one
+# string. rpm's Lua gets them as string literals, so only the characters rpm
+# allows in a version or release are passed on.
 
 rpm_newer_version_exists() {
-    local base="$1" version list="" newer="" valid='^[[:alnum:]._+~^-]+$'
+    local base="$1" evr list="" newer="" valid='^[[:alnum:]._+~^]+-[[:alnum:]._+~^]+$'
     shift
     [[ "$base" =~ $valid ]] || return 1
-    for version in "$@"; do
-        [[ "$version" =~ $valid ]] && list+="'${version}',"
+    for evr in "$@"; do
+        [[ "$evr" =~ $valid ]] && list+="{'${evr%-*}','${evr#*-}'},"
     done
-    newer=$(timeout "${QUERY_TIMEOUT}s" rpm --eval "%{lua: local n = 0; for _, v in ipairs({${list}}) do if rpm.vercmp(v, '${base}') > 0 then n = n + 1 end end; print(n)}" 2>/dev/null) || true
+    newer=$(timeout "${QUERY_TIMEOUT}s" rpm --eval "%{lua: local n = 0; for _, p in ipairs({${list}}) do local c = rpm.vercmp(p[1], '${base%-*}'); if c == 0 then c = rpm.vercmp(p[2], '${base#*-}') end; if c > 0 then n = n + 1 end end; print(n)}" 2>/dev/null) || true
     [[ "$newer" =~ ^[1-9] ]]
 }
 
