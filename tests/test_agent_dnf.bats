@@ -28,6 +28,8 @@ setup() {
     STUB_BIN=""
     # Written by the fingerprint test only, removed in teardown
     TEST_REPO_FILE="/etc/yum.repos.d/bats-fingerprint-test.repo"
+    # Written by the metadata search depth test only, removed in teardown
+    TEST_CACHE_DIR="/var/cache/dnf/bats-depth-test-0123456789abcdef"
 }
 
 # Run the agent, restricted to STUB_BIN when use_fake_pm set one up.
@@ -113,6 +115,7 @@ fake_kernel() {
 
 teardown() {
     rm -f "${TEST_REPO_FILE}"
+    rm -rf "${TEST_CACHE_DIR}"
     # A background refresh may still be starting up or writing into the cache
     # directory, so wait for its lock and retry the removal.
     local i
@@ -587,6 +590,26 @@ Reboot should not be necessary.
     : > "${TEST_REPO_FILE}"
     agent --refresh
     grep -q "^${TEST_REPO_FILE} " "${MK_VARDIR}/cache/dnf_pkg_state.cache"
+}
+
+@test "Cached packages are not searched for repository metadata" {
+    if [[ ! -w /var/cache ]] || ! command -v find &>/dev/null; then
+        skip "/var/cache not writable"
+    fi
+    use_fake_pm dnf
+    ln -s "$(command -v find)" "${STUB_BIN}/find"
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    mkdir -p "${TEST_CACHE_DIR}/repodata" "${TEST_CACHE_DIR}/packages"
+    : > "${TEST_CACHE_DIR}/repodata/repomd.xml"
+    : > "${TEST_CACHE_DIR}/packages/repomd.xml"
+    touch -d @4000000000 "${TEST_CACHE_DIR}/packages/bats-primary.xml.gz"
+
+    run_agent_refreshed
+    [ "${lines[5]}" != "4000000000" ]
+    grep -q "^${TEST_CACHE_DIR}/repodata/repomd.xml " "${MK_VARDIR}/cache/dnf_pkg_state.cache"
+    run grep -q "^${TEST_CACHE_DIR}/packages/" "${MK_VARDIR}/cache/dnf_pkg_state.cache"
+    [ "$status" -eq 1 ]
 }
 
 @test "Legacy 4-line cache files are removed" {

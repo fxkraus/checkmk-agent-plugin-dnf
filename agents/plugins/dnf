@@ -320,11 +320,14 @@ get_last_update_timestamp() {
 # dnf-makecache.timer / dnf5-makecache.timer downloads. makecache rewrites
 # repomd.xml only when a repo changed; when the metadata is still current it
 # touches the primary metadata instead, so that is the last confirmed refresh.
+# Metadata sits in <cache>/<repo>-<hash>/repodata/, so this search and the
+# fingerprint's stop at that depth and skip the downloaded packages
+# (keepcache) next to it.
 
 get_metadata_timestamp() {
     local newest
-    newest=$(find /var/cache/dnf /var/cache/yum /var/cache/libdnf5 \
-        -name '*primary.xml*' -printf '%T@\n' 2>/dev/null | sort -n | tail -n1) || true
+    newest=$(find /var/cache/dnf /var/cache/yum /var/cache/libdnf5 -maxdepth 3 \
+        -name packages -prune -o -name '*primary.xml*' -printf '%T@\n' 2>/dev/null | sort -n | tail -n1) || true
     newest="${newest%.*}"
     echo "${newest:--1}"
 }
@@ -339,8 +342,8 @@ get_metadata_timestamp() {
 
 get_pkg_state_fingerprint() {
     local repo_metadata rpmdb versionlock config boot_id
-    repo_metadata=$(find /var/cache/dnf /var/cache/yum /var/cache/libdnf5 \
-        -name repomd.xml -printf '%p %T@ %s\n' 2>/dev/null) || true
+    repo_metadata=$(find /var/cache/dnf /var/cache/yum /var/cache/libdnf5 -maxdepth 3 \
+        -name packages -prune -o -name repomd.xml -printf '%p %T@ %s\n' 2>/dev/null) || true
     rpmdb=$(find /var/lib/rpm /usr/lib/sysimage/rpm -maxdepth 1 \
         \( -name Packages -o -name rpmdb.sqlite -o -name rpmdb.sqlite-wal \) \
         -printf '%p %T@ %s\n' 2>/dev/null) || true
