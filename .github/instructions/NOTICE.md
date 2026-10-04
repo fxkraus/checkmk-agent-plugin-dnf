@@ -10,7 +10,6 @@ possibly with local changes) and are used under the MIT License below:
 - `makefile.instructions.md`
 - `markdown.instructions.md`
 - `no-heredoc.instructions.md`
-- `object-calisthenics.instructions.md`
 - `shell.instructions.md`
 - `taming-copilot.instructions.md`
 - `update-docs-on-code-change.instructions.md`

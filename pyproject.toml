@@ -31,7 +31,7 @@ default-groups = ["dev"]
 # Target Python 3.13 (Checkmk 2.5 uses Python 3.13)
 target-version = "py313"
 
-# Line length matching black's default
+# Long lines are allowed; the formatter wraps where it can
 line-length = 200
 
 # Include all Python files
@@ -99,9 +99,9 @@ fixable = ["ALL"]
 unfixable = []
 
 [tool.ruff.lint.per-file-ignores]
-# Tests can use assert, magic values, etc.
+# Tests can use magic values, etc.
 # SLF001: tests exercise private helpers; PLC0415: plugin modules imported lazily
-"tests/*" = ["S101", "PLR2004", "ARG001", "SLF001", "PLC0415"]
+"tests/*" = ["PLR2004", "ARG001", "SLF001", "PLC0415"]
 
 [tool.ruff.lint.isort]
 # Force single-line imports for clarity

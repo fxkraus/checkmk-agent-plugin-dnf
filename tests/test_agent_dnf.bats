@@ -1020,19 +1020,19 @@ Begin time     : 2026-09-27 10:48:33
 # Function isolation tests (source the script and test functions)
 # =============================================================================
 
-@test "detect_package_manager function finds dnf or yum" {
-    source "${AGENT_PLUGIN}" || true
+@test "Sourcing the plugin defines its functions without running anything" {
+    run bash -c 'unset MK_VARDIR; source "$1"; declare -F detect_package_manager' _ "${AGENT_PLUGIN}"
+    [ "$status" -eq 0 ]
+    [ "$output" = "detect_package_manager" ]
+}
 
-    if declare -f detect_package_manager &>/dev/null; then
-        if command -v dnf5 &>/dev/null || command -v dnf &>/dev/null || command -v yum &>/dev/null; then
-            detect_package_manager
-            [[ "$PKG_MGR" =~ ^(dnf5|dnf|yum)$ ]]
-        else
-            skip "No package manager available"
-        fi
-    else
-        skip "Function not accessible"
+@test "detect_package_manager function finds dnf or yum" {
+    if ! command -v dnf5 &>/dev/null && ! command -v dnf &>/dev/null && ! command -v yum &>/dev/null; then
+        skip "No package manager available"
     fi
+    source "${AGENT_PLUGIN}"
+    detect_package_manager
+    [[ "$PKG_MGR" =~ ^(dnf5|dnf|yum)$ ]]
 }
 
 # =============================================================================
