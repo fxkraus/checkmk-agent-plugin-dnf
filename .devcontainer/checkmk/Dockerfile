@@ -1,5 +1,5 @@
 # Literal tag (no ARG) so Dependabot can detect and bump it
-FROM ghcr.io/astral-sh/uv:0.12.22 AS uv
+FROM ghcr.io/astral-sh/uv:0.12.23 AS uv
 
 # Latest Checkmk 2.5 patch release, same as build/Dockerfile. The tag floats on
 # purpose; rebuild the devcontainer to pick up a new patch release.
