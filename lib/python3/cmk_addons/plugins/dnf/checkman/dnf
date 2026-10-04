@@ -15,7 +15,7 @@ description:
  due to a kernel update.
 
  Thresholds for normal and security update counts as well as the maximum
- age of the last update can be configured via WATO rules. A missing or old
+ age of the last update can be configured via Setup rules. A missing or old
  last update only changes the state while updates are pending.
 
  The agent plugin queries the local metadata cache only, which
@@ -31,7 +31,7 @@ description:
  The check goes {CRIT} by default if a reboot is required: a newer kernel
  than the running one is installed, or {needs-restarting -r} reports core
  libraries or services (glibc, systemd, ...) updated since boot. The state,
- and whether {needs-restarting} is used, can be configured via a WATO rule.
+ and whether {needs-restarting} is used, can be configured via a Setup rule.
 
  The plugin must be deployed to the agent's {plugins} directory, either
  manually or through the Agent Bakery.

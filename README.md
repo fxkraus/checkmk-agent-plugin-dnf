@@ -97,7 +97,7 @@ it is older than 7 days (configurable).
   agent user or root, and neither may be group- or world-writable; otherwise
   the plugin reports an error. Directories the plugin creates itself get mode
   0755 regardless of the umask.
-- **WATO rules** — fully configurable thresholds via the Checkmk GUI.
+- **Setup rules** — fully configurable thresholds via the Checkmk GUI.
 - **Agent Bakery** — deploy the agent plugin automatically, either on every
   agent call or asynchronously at an interval.
 - **Graphing** — emits `normal_updates` and `security_updates` metrics,
@@ -214,8 +214,8 @@ lib/python3/
     checkman/
       dnf                        # Checkmk manual page
     rulesets/
-      ruleset_dnf_bakery.py      # WATO ruleset: bakery configuration
-      ruleset_dnf_check_parameters.py  # WATO ruleset: check thresholds
+      ruleset_dnf_bakery.py      # Setup ruleset: bakery configuration
+      ruleset_dnf_check_parameters.py  # Setup ruleset: check thresholds
 pyproject.toml                   # Dev dependency groups (uv) + ruff/mypy/pytest config
 uv.lock                          # Locked dev dependency versions
 .pre-commit-config.yaml          # Linters + secret scan (local and CI)

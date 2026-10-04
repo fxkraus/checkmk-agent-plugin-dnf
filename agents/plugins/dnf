@@ -74,36 +74,7 @@ die() {
     exit 0
 }
 
-# --- Validate environment ---
-if [[ -z "${MK_VARDIR:-}" ]]; then
-    die "MK_VARDIR not set - agent environment unavailable"
-fi
-
-# --- Cache directory and file paths ---
-readonly CACHE_DIR="${MK_VARDIR}/cache"
-
-# Ensure cache directory exists and is usable. umask 022 keeps any directory
-# created here from failing the permission checks below.
-if ! (umask 022 && mkdir -p "${CACHE_DIR}"); then
-    die "Unable to create cache directory: ${CACHE_DIR}"
-fi
-
-# Whoever can write to MK_VARDIR could swap the cache directory for a symlink
-# after it has been checked, so it must belong to the agent's user or root.
-read -r vardir_uid vardir_mode < <(stat -L -c '%u %a' "${MK_VARDIR}" 2>/dev/null) || true
-if [[ "${vardir_uid:-}" != "${EUID}" && "${vardir_uid:-}" != 0 ]] \
-    || (( 8#${vardir_mode:-777} & 8#022 )); then
-    die "MK_VARDIR must be owned by UID ${EUID} or root and not group- or world-writable: ${MK_VARDIR}"
-fi
-
-# Only the agent's own user may write to the cache directory; otherwise
-# someone else could plant symlinks that the agent (usually root) follows.
-read -r cache_dir_uid cache_dir_mode < <(stat -c '%u %a' "${CACHE_DIR}" 2>/dev/null) || true
-if [[ -L "${CACHE_DIR}" || ! -d "${CACHE_DIR}" || "${cache_dir_uid:-}" != "${EUID}" ]] \
-    || (( 8#${cache_dir_mode:-777} & 8#022 )); then
-    die "Cache directory must be a directory owned by UID ${EUID} and not group- or world-writable: ${CACHE_DIR}"
-fi
-
+readonly CACHE_DIR="${MK_VARDIR:-}/cache"
 # Result lines 2-4. Named differently from the pre-async 4-line
 # yum_result.cache so an upgraded plugin never serves the old format.
 readonly CACHE_RESULT="${CACHE_DIR}/dnf_updates.cache"
@@ -114,6 +85,38 @@ readonly CACHE_LOCK="${CACHE_DIR}/dnf_refresh.lock"
 # of the first unsuccessful attempt; its mtime is the latest attempt.
 readonly CACHE_PENDING="${CACHE_DIR}/dnf_refresh_pending.cache"
 readonly LEGACY_CACHE_FILES=("${CACHE_DIR}/yum_result.cache" "${CACHE_DIR}/yum_uptime.cache")
+
+# --- Validate environment ---
+
+validate_environment() {
+    local vardir_uid vardir_mode cache_dir_uid cache_dir_mode
+
+    if [[ -z "${MK_VARDIR:-}" ]]; then
+        die "MK_VARDIR not set - agent environment unavailable"
+    fi
+
+    # Ensure cache directory exists and is usable. umask 022 keeps any directory
+    # created here from failing the permission checks below.
+    if ! (umask 022 && mkdir -p "${CACHE_DIR}"); then
+        die "Unable to create cache directory: ${CACHE_DIR}"
+    fi
+
+    # Whoever can write to MK_VARDIR could swap the cache directory for a symlink
+    # after it has been checked, so it must belong to the agent's user or root.
+    read -r vardir_uid vardir_mode < <(stat -L -c '%u %a' "${MK_VARDIR}" 2>/dev/null) || true
+    if [[ "${vardir_uid:-}" != "${EUID}" && "${vardir_uid:-}" != 0 ]] \
+        || (( 8#${vardir_mode:-777} & 8#022 )); then
+        die "MK_VARDIR must be owned by UID ${EUID} or root and not group- or world-writable: ${MK_VARDIR}"
+    fi
+
+    # Only the agent's own user may write to the cache directory; otherwise
+    # someone else could plant symlinks that the agent (usually root) follows.
+    read -r cache_dir_uid cache_dir_mode < <(stat -c '%u %a' "${CACHE_DIR}" 2>/dev/null) || true
+    if [[ -L "${CACHE_DIR}" || ! -d "${CACHE_DIR}" || "${cache_dir_uid:-}" != "${EUID}" ]] \
+        || (( 8#${cache_dir_mode:-777} & 8#022 )); then
+        die "Cache directory must be a directory owned by UID ${EUID} and not group- or world-writable: ${CACHE_DIR}"
+    fi
+}
 
 # --- Cache file helpers ---
 
@@ -483,6 +486,7 @@ start_refresh() {
 # --- Main ---
 
 main() {
+    validate_environment
     detect_package_manager
 
     init_cache_file "$CACHE_RESULT"
@@ -531,4 +535,7 @@ main() {
     fi
 }
 
-main "$@"
+# Sourcing (tests) only defines the functions
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
