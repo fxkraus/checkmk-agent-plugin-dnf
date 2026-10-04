@@ -69,9 +69,10 @@ else
 fi
 echo "Derived version: $VERSION"
 
-# Checkmk crashes parsing non-standard versions such as 1.2.3-alpha.1
-if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([ipb][0-9]+)?$ ]]; then
-  echo "ERROR: '$VERSION' is not a valid Checkmk version (e.g. 1.2.3, 1.2.3p1, 1.2.3i1, 1.2.3b1)" >&2
+# mkp package only accepts semantic versions, so Checkmk-style suffixes
+# (1.2.3p1) fail, and Checkmk crashes parsing pre-releases such as 1.2.3-rc1
+if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+  echo "ERROR: '$VERSION' is not a valid package version: use MAJOR.MINOR.PATCH, e.g. 1.2.3" >&2
   exit 1
 fi
 

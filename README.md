@@ -297,18 +297,19 @@ The build also fails if it cannot stamp the version into the agent plugin
 (the `CMK_VERSION="0.0.0"` placeholder in `agents/plugins/dnf`).
 
 > [!WARNING]
-> **The git tag must be a valid Checkmk version string** such as `1.2.3`,
-> `1.2.3p1`, or `1.2.3i1`. Non-standard suffixes like `-alpha`, `-beta`, or
+> **The git tag must be `vMAJOR.MINOR.PATCH`**, such as `v1.2.3`. `mkp
+> package` only accepts semantic versions, so Checkmk-style suffixes like
+> `p1`, `i1` or `b1` fail. Pre-release suffixes like `-alpha`, `-beta`, or
 > `-rc1` will cause the Checkmk server to crash when parsing
-> `parse_check_mk_version()`, so the build rejects them.
+> `parse_check_mk_version()`. The build rejects both.
 >
-> **Good:** `v0.1.0`, `v0.1.0p1`, `v1.0.0`
-> **Bad:** `v0.1.0-alpha`, `v1.0.0-beta2`
+> **Good:** `v0.1.0`, `v1.0.0`, `v1.0.1`
+> **Bad:** `v0.1.0p1`, `v0.1.0-alpha`, `v1.0.0-beta2`
 
 ### Releasing
 
 Push a version tag on a commit of `main`; the **Release MKP** workflow builds
-the MKP and publishes a GitHub release (`iN`/`bN` tags as pre-releases) with
+the MKP and publishes a GitHub release with
 a `SHA256SUMS` file and a signed build provenance attestation. The workflow
 verifies the attestation before publishing, then downloads the published
 assets and checks the checksums and the attestation again (job "Verify
@@ -527,7 +528,7 @@ Checkmk ships no `py.typed` markers, so
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `ci.yml` | push to `main`, pull requests | pre-commit lint, gitleaks secret scan, BATS on AlmaLinux 8/9/10 and Fedora 42, end-to-end test with the real agent under systemd, pytest and mypy against Checkmk 2.5, MKP build |
-| `release.yml` | tag `vX.Y.Z` (optionally `pN`, `iN`, `bN` suffix) on `main` | builds the MKP with a read-only token, then publishes a GitHub release (`iN`/`bN` as pre-release) with the base image digest, `SHA256SUMS` and a build provenance attestation |
+| `release.yml` | tag `vX.Y.Z` on `main` | builds the MKP with a read-only token, then publishes a GitHub release with the base image digest, `SHA256SUMS` and a build provenance attestation |
 | `dependabot-auto-merge.yml` | Dependabot pull requests | enables auto-merge for minor/patch uv updates (public repository only) |
 
 Every commit on `main` produces an MKP, attached to the CI run as the
