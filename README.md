@@ -61,7 +61,8 @@ it is older than 7 days (configurable).
   (with an optional package list in the service details).
 - **Versionlock aware** — packages locked with `dnf versionlock` are not
   counted as pending updates, on dnf 4 (plugin) as on dnf5 (built in).
-- **Reboot detection** — flags a pending reboot when a newer kernel than the
+- **Reboot detection** — flags a pending reboot when a newer kernel (in rpm's
+  version order) than the
   running one is installed, or when `needs-restarting -r` (dnf 4 plugins,
   built into dnf5) reports core libraries or services (glibc, systemd,
   openssl, …) updated since boot. The latter can be switched off; hosts

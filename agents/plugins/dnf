@@ -149,6 +149,22 @@ detect_package_manager() {
     fi
 }
 
+# --- True if rpm orders any further version after the first one ---
+# sort -V is not rpm's order: it puts the GA kernel 4.18.0-553.el8_10 after
+# 4.18.0-553.5.1.el8_10. rpm's Lua gets the versions as string literals, so
+# only the characters rpm allows in a version are passed on.
+
+rpm_newer_version_exists() {
+    local base="$1" version list="" newer="" valid='^[[:alnum:]._+~^-]+$'
+    shift
+    [[ "$base" =~ $valid ]] || return 1
+    for version in "$@"; do
+        [[ "$version" =~ $valid ]] && list+="'${version}',"
+    done
+    newer=$(rpm --eval "%{lua: local n = 0; for _, v in ipairs({${list}}) do if rpm.vercmp(v, '${base}') > 0 then n = n + 1 end end; print(n)}" 2>/dev/null) || true
+    [[ "$newer" =~ ^[1-9] ]]
+}
+
 # --- Check if kernel update requires reboot ---
 
 # The newest kernel is the highest version, not the last one installed: a
@@ -157,7 +173,8 @@ detect_package_manager() {
 # /boot/config file is only a %ghost there and missing on some boot layouts,
 # so it serves as a fallback for kernels packaged differently.
 check_reboot_required() {
-    local release file owners="" kernel_package running_kernel latest_kernel
+    local release file owners="" kernel_package running_kernel
+    local -a installed
 
     release=$(uname -r)
     # rpm prints "not owned by any package" to stdout, so check the exit code.
@@ -175,13 +192,12 @@ check_reboot_required() {
     fi
     read -r kernel_package running_kernel <<< "$owners"
 
-    latest_kernel=$(rpm -q --qf '%{VERSION}-%{RELEASE}\n' "$kernel_package" 2>/dev/null \
-        | sort -V | tail -n1) || true
+    mapfile -t installed < <(rpm -q --qf '%{VERSION}-%{RELEASE}\n' "$kernel_package" 2>/dev/null || true)
 
-    if [[ "$running_kernel" == "$latest_kernel" ]]; then
-        echo "no"
-    else
+    if rpm_newer_version_exists "$running_kernel" "${installed[@]}"; then
         echo "yes"
+    else
+        echo "no"
     fi
 }
 
