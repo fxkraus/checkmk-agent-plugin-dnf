@@ -249,6 +249,7 @@ tests/
   fixtures/fake-rpm              # Fake rpm for the reboot detection tests
   fixtures/fake-systemd-run      # Fake systemd-run for the refresh tests
   systemd/test-socket-activated-agent.sh  # End-to-end test: real agent under systemd
+  systemd/Dockerfile             # Its systemd host image, pinned by digest
 ```
 
 ---
@@ -480,7 +481,9 @@ CI runs this suite on AlmaLinux 8, 9 and 10 (dnf) and Fedora 42 (dnf5).
 
 The BATS containers have no systemd, so a separate test boots an
 `almalinux/9-init` container (not privileged; it needs Docker on a cgroup v2
-host), installs the real Checkmk agent RPM from the Checkmk image, deploys the
+host). systemd needs write access to the host's cgroup tree, so that image is
+pinned by digest in [`tests/systemd/Dockerfile`](tests/systemd/Dockerfile)
+and updated through Dependabot. The test installs the real Checkmk agent RPM from the Checkmk image, deploys the
 plugin to `plugins/` and queries the socket-activated agent until the
 background refresh has written its cache:
 
@@ -535,12 +538,13 @@ compromised release is usually yanked first; security updates are not
 delayed. Minor and patch updates of the uv ecosystem (hash-locked in
 `uv.lock`) are merged automatically once all required checks pass.
 pre-commit hook, Docker image and GitHub Actions updates, and all major
-updates, always need a manual review. Hooks are pinned to commit SHAs (`# frozen: vX.Y.Z` comments);
-refresh them with `pre-commit autoupdate --freeze`. The Checkmk images use the
-floating `2.5.0-latest` tag and are not managed by Dependabot (see the note in
-`.github/dependabot.yml`). The distribution images the tests run in
-(`almalinux:8/9/10`, `fedora:42`, `almalinux/9-init`) float on purpose as
-well, so the tests always see current distribution packages; those jobs hold
+updates, always need a manual review. Hooks are pinned to commit SHAs
+(`# frozen: vX.Y.Z` comments); refresh them with
+`pre-commit autoupdate --freeze`. The Checkmk images use the floating
+`2.5.0-latest` tag and are not managed by Dependabot (see the note in
+`.github/dependabot.yml`). The distribution images the BATS tests run in
+(`almalinux:8/9/10`, `fedora:42`) float on purpose as well, so the tests
+always see current distribution packages; those jobs hold
 no secrets and only a read-only token.
 
 Auto-merge relies on two repository settings; without them, the workflow would

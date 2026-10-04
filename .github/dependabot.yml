@@ -72,6 +72,19 @@ updates:
       - dependency-name: "almalinux"
         versions: [">= 10"]
 
+  # ── Docker (systemd end-to-end test host) ─────────────────────────────────
+  - package-ecosystem: "docker"
+    directory: "/tests/systemd"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    labels:
+      - "dependencies"
+    ignore:
+      - dependency-name: "almalinux/9-init"
+        versions: [">= 10"]
+
   # ── pre-commit hooks ───────────────────────────────────────────────────────
   - package-ecosystem: "pre-commit"
     directory: "/"
