@@ -9,6 +9,7 @@
 #                   $FAKE_PM_DIR/rpm-qf.args.
 #   rpm -q <name>   prints $FAKE_PM_DIR/kernels (installed VERSION-RELEASE
 #                   lines, in install order)
+#   rpm --eval ...  runs the real rpm, for its version comparison
 
 : "${FAKE_PM_DIR:?FAKE_PM_DIR must point at the fake responses}"
 
@@ -26,6 +27,9 @@ case "$1" in
         ;;
     -q)
         cat "${FAKE_PM_DIR}/kernels"
+        ;;
+    --eval)
+        exec /usr/bin/rpm "$@"
         ;;
     *)
         exit 1

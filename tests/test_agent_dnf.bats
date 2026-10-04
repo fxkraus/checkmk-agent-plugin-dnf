@@ -730,6 +730,21 @@ Begin time     : 2026-09-27 10:48:33
     [ "${lines[1]}" = "no" ]
 }
 
+@test "Reboot: kernels are ordered like rpm, not like sort -V" {
+    use_fake_pm dnf
+    # sort -V would take the GA kernel 553.el8_10 for the newest
+    fake_kernel 4.18.0-553.5.1.el8_10 4.18.0-553.el8_10 4.18.0-553.5.1.el8_10
+    run_agent_refreshed
+    [ "${lines[1]}" = "no" ]
+}
+
+@test "Reboot: an update of the GA kernel needs a reboot" {
+    use_fake_pm dnf
+    fake_kernel 4.18.0-553.el8_10 4.18.0-553.el8_10 4.18.0-553.5.1.el8_10
+    run_agent_refreshed
+    [ "${lines[1]}" = "yes" ]
+}
+
 @test "Reboot: only the first package owning the kernel config is used" {
     use_fake_pm dnf
     fake_kernel 5.14.0-503.9.1.el9 5.14.0-503.9.1.el9

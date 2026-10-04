@@ -62,10 +62,11 @@ it is older than 7 days (configurable).
 - **Versionlock aware** — packages locked with `dnf versionlock` are not
   counted as pending updates, on dnf 4 (plugin) as on dnf5 (built in).
 - **Reboot detection** — flags a pending reboot when a newer kernel than the
-  running one is installed, or when `needs-restarting -r` (dnf 4 plugins,
-  built into dnf5) reports core libraries or services (glibc, systemd,
-  openssl, …) updated since boot. The latter can be switched off; hosts
-  without `needs-restarting` fall back to the kernel check.
+  running one (in rpm's version order) is installed, or when
+  `needs-restarting -r` (dnf 4 plugins, built into dnf5) reports core
+  libraries or services (glibc, systemd, openssl, …) updated since boot. The
+  latter can be switched off; hosts without `needs-restarting` fall back to
+  the kernel check.
 - **Last update age** — warns when the system has not been updated within a
   configurable number of days, or when no upgrade transaction is recorded at
   all, as long as updates are pending.
