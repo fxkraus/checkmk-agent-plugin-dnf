@@ -279,10 +279,11 @@ def check_dnf(params: DnfParams, section: DnfSection) -> CheckResult:
                 "on the host. A package manager lock or a broken repository configuration can also cause this."
             ),
         )
-        return
+    else:
+        yield from _check_updates(params, section)
+        yield from _check_last_update(params, section)
 
-    yield from _check_updates(params, section)
-    yield from _check_last_update(params, section)
+    # Independent of the package counts: still valid when the query failed
     yield from _check_metadata_age(params, section)
     yield from _check_refresh_pending(params, section)
 

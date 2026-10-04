@@ -217,6 +217,21 @@ class TestCheckDnf:
 
         assert any(isinstance(r, Result) and "makecache" in r.details for r in results)
 
+    def test_check_no_packages_info_still_reports_reboot(self, default_params):
+        """The kernel reboot check is computed live, so a failed query must not hide it."""
+        results = list(check_dnf(default_params, DnfSection(packages=-1, reboot_required=True)))
+
+        states = [r.state for r in results if isinstance(r, Result)]
+        assert State.UNKNOWN in states
+        assert any(isinstance(r, Result) and r.state == State.CRIT and r.summary == "Reboot required" for r in results)
+
+    def test_check_no_packages_info_still_reports_stale_refresh(self, default_params):
+        """A refresh that keeps failing must still be reported next to the UNKNOWN result."""
+        section = DnfSection(packages=-1, refresh_pending_since=1000)
+        results = list(check_dnf(default_params, section))
+
+        assert any(isinstance(r, Result) and r.state == State.WARN and "no background refresh" in r.summary for r in results)
+
     @pytest.mark.parametrize("packages", [0, 3])
     def test_check_security_unsupported_has_no_metric(self, default_params, packages):
         """An unknown number of security updates must not be graphed as 0."""
