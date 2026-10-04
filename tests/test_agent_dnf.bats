@@ -804,6 +804,21 @@ Begin time     : 2026-09-27 10:48:33
     [ "${lines[1]}" = "no" ]
 }
 
+@test "Reboot: version and release are compared separately, like rpm" {
+    use_fake_pm dnf
+    # As one string, 5.14-2 sorts after 5.14.0-1, but its version is older
+    fake_kernel 5.14.0-1.el9 5.14.0-1.el9 5.14-2.el9
+    run_agent_refreshed
+    [ "${lines[1]}" = "no" ]
+}
+
+@test "Reboot: a newer version with a lower release needs a reboot" {
+    use_fake_pm dnf
+    fake_kernel 5.14-2.el9 5.14-2.el9 5.14.0-1.el9
+    run_agent_refreshed
+    [ "${lines[1]}" = "yes" ]
+}
+
 @test "Reboot: an update of the GA kernel needs a reboot" {
     use_fake_pm dnf
     fake_kernel 4.18.0-553.el8_10 4.18.0-553.el8_10 4.18.0-553.5.1.el8_10
