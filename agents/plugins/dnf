@@ -509,7 +509,16 @@ main() {
         get_refresh_pending_since
         echo "${result[3]:-unknown}"
     else
-        echo "ERROR: First update check is running in the background, results follow on the next agent run"
+        # A first refresh that keeps timing out or being killed never writes
+        # a result, so "running" would stay wrong indefinitely
+        local since now
+        since=$(get_refresh_pending_since)
+        printf -v now '%(%s)T' -1
+        if (( since >= 0 && now - since >= RETRY_INTERVAL )); then
+            printf 'ERROR: No background refresh has completed since %(%Y-%m-%d %H:%M:%S)T, it keeps timing out or being killed\n' "$since"
+        else
+            echo "ERROR: First update check is running in the background, results follow on the next agent run"
+        fi
     fi
 }
 
