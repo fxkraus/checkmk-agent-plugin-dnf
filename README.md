@@ -472,9 +472,10 @@ CI runs this suite on AlmaLinux 8, 9 and 10 (dnf) and Fedora 42 (dnf5).
 **End-to-end test under systemd:**
 
 The BATS containers have no systemd, so a separate test boots an
-`almalinux/9-init` container (privileged), installs the real Checkmk agent RPM
-from the Checkmk image, deploys the plugin to `plugins/` and queries the
-socket-activated agent until the background refresh has written its cache:
+`almalinux/9-init` container (not privileged; it needs Docker on a cgroup v2
+host), installs the real Checkmk agent RPM from the Checkmk image, deploys the
+plugin to `plugins/` and queries the socket-activated agent until the
+background refresh has written its cache:
 
 ```bash
 make test-systemd
