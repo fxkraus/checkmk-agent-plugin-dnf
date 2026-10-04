@@ -115,17 +115,17 @@ jobs:
               --deny-self-hosted-runners
           done
 
+      # gh instead of a third-party action, so this job (write token, OIDC)
+      # only runs first-party code. --notes is prepended to the generated notes.
       - name: Create release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          # Prepended to the generated release notes
-          body: "Built with the Checkmk image `${{ needs.build.outputs.base-image }}`."
-          generate_release_notes: true
-          files: |
-            *.mkp
-            SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_IMAGE: ${{ needs.build.outputs.base-image }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Built with the Checkmk image \`$BASE_IMAGE\`." --generate-notes \
+            -- *.mkp SHA256SUMS
 
   # Checks what users actually download: the published assets of the release.
   verify:
