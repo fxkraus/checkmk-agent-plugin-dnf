@@ -6,14 +6,14 @@
 #   make build           Build the MKP package
 #   make lint            Run all linters and the secret scan (pre-commit, same as CI)
 #   make secrets         Scan the full git history for secrets (gitleaks)
-#   make test            Run all tests
+#   make test            Run all tests in containers (BATS, pytest, mypy)
 #   make test-systemd    End-to-end test with the real agent under systemd
 #   make deploy-plugin   Symlink plugin into CMK site (devcontainer)
 #   make discover        Discover services on AlmaLinux host (devcontainer)
 #   make clean           Remove build artifacts
 
 .PHONY: help lint secrets format \
-        test test-shell test-python test-python-docker typecheck-docker test-systemd \
+        test test-shell test-shell-docker test-python test-python-docker typecheck-docker test-systemd \
         build clean \
         deploy-plugin discover redeploy
 
@@ -24,6 +24,9 @@ PYTHON := python3
 BUILD_ARGS := $(if $(HTTP_PROXY),--build-arg HTTP_PROXY=$(HTTP_PROXY) --build-arg http_proxy=$(HTTP_PROXY),) \
               $(if $(HTTPS_PROXY),--build-arg HTTPS_PROXY=$(HTTPS_PROXY) --build-arg https_proxy=$(HTTPS_PROXY),) \
               $(if $(NO_PROXY),--build-arg NO_PROXY=$(NO_PROXY) --build-arg no_proxy=$(NO_PROXY),)
+
+# Distribution image for test-shell-docker (CI also runs almalinux:8/10, fedora:42)
+BATS_IMAGE ?= docker.io/library/almalinux:9
 
 # Image that provides the Checkmk agent RPM for test-systemd
 CMK_IMAGE ?= docker.io/checkmk/check-mk-ultimatemt:2.5.0-latest
@@ -45,8 +48,9 @@ help:
 	@echo "    format         Format and autofix Python code with ruff"
 	@echo ""
 	@echo "  Testing:"
-	@echo "    test           Run all tests"
-	@echo "    test-shell     Run BATS shell tests"
+	@echo "    test           Run all tests in containers (BATS, pytest, mypy)"
+	@echo "    test-shell-docker   Run BATS shell tests in BATS_IMAGE (default almalinux:9)"
+	@echo "    test-shell     Run BATS shell tests on this host"
 	@echo "    test-python    Run pytest Python tests (inside a Checkmk site)"
 	@echo "    test-python-docker  Run pytest inside the Checkmk build image"
 	@echo "    typecheck-docker    Run mypy on the plugin modules inside the Checkmk build image"
@@ -82,15 +86,27 @@ format:
 # Testing
 # =============================================================================
 
-test: test-shell test-python
+test: test-shell-docker test-python-docker typecheck-docker
+
+# The container is throwaway, so the tests that upgrade packages may run too
+test-shell-docker:
+	@echo "==> Running BATS tests in $(BATS_IMAGE)..."
+	docker run --rm -v "$$PWD:/code:ro" -w /code -e DNF_AGENT_TEST_ALLOW_UPGRADE=1 \
+		$(BATS_IMAGE) bash -euc '\
+			command -v dnf5 >/dev/null || dnf -y -q install epel-release; \
+			dnf -y -q install bats; \
+			dnf -q makecache; \
+			bats tests/test_agent_dnf.bats'
 
 test-shell:
 	@echo "==> Running BATS tests..."
 	bats tests/test_agent_dnf.bats
 
+# Fails instead of letting every test module skip itself outside a Checkmk site
 test-python:
 	@echo "==> Running pytest..."
-	pytest tests/
+	$(PYTHON) -c "import cmk.agent_based.v2"
+	$(PYTHON) -m pytest tests/
 
 test-python-docker:
 	@echo "==> Running pytest inside the Checkmk build image..."

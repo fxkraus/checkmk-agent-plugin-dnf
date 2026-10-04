@@ -448,7 +448,7 @@ make secrets         # full git history scan with gitleaks (Docker)
 make lint         # Run all pre-commit hooks (linters + secret scan)
 make secrets      # Scan the full git history for secrets
 make format       # Auto-format Python code
-make test         # Run all tests
+make test         # Run all tests in containers (BATS, pytest, mypy)
 make test-systemd # End-to-end test with the real agent under systemd (Docker)
 make build        # Build the MKP package
 make clean        # Remove build artifacts
@@ -459,7 +459,8 @@ make clean        # Remove build artifacts
 **Shell Tests (BATS):**
 
 ```bash
-bats tests/test_agent_dnf.bats
+make test-shell-docker                                   # AlmaLinux 9
+make test-shell-docker BATS_IMAGE=docker.io/library/fedora:42   # dnf5
 ```
 
 The package-manager parsing tests use a fake `dnf5`/`dnf`
@@ -468,12 +469,10 @@ fake `rpm` ([`tests/fixtures/fake-rpm`](tests/fixtures/fake-rpm)); both run on
 any Linux host. The tests against the real package manager need `dnf`/`dnf5`
 with a populated metadata cache. Two tests modify the system (they downgrade,
 upgrade and version-lock packages) and only run with
-`DNF_AGENT_TEST_ALLOW_UPGRADE=1`, so run them in a throwaway container:
-
-```bash
-docker run --rm -v "$PWD:/code:ro" -w /code -e DNF_AGENT_TEST_ALLOW_UPGRADE=1 \
-  fedora:42 bash -c 'dnf -y -q install bats && dnf -q makecache && bats tests/test_agent_dnf.bats'
-```
+`DNF_AGENT_TEST_ALLOW_UPGRADE=1`, which `make test-shell-docker` sets because
+its container is thrown away. `make test-shell` runs the suite directly on the
+host instead, without those two tests; run as root it also writes a test file
+to `/etc/yum.repos.d` and `/var/cache/dnf` (removed afterwards).
 
 CI runs this suite on AlmaLinux 8, 9 and 10 (dnf) and Fedora 42 (dnf5).
 
@@ -506,7 +505,9 @@ The image has no uv, so the target exports the `test` dependency group from
 `uv.lock` with hashes (`uv export`, needs uv on the host) and
 `tests/run-pytest.sh` installs it with `pip --require-hashes`.
 
-Inside the devcontainer or a Checkmk site, `pytest tests/` works directly.
+Inside the devcontainer or a Checkmk site, `make test-python` runs them
+directly; it fails if the Checkmk libraries are missing instead of skipping
+every test.
 
 **Type checks:**
 
