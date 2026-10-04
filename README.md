@@ -66,7 +66,7 @@ it is older than 7 days (configurable).
   `needs-restarting -r` (dnf 4 plugins, built into dnf5) reports core
   libraries or services (glibc, systemd, openssl, …) updated since boot. The
   latter can be switched off; hosts without `needs-restarting` fall back to
-  the kernel check.
+  the kernel check, which the service details then say.
 - **Last update age** — warns when the system has not been updated within a
   configurable number of days, or when no upgrade transaction is recorded at
   all, as long as updates are pending.
