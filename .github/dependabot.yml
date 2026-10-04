@@ -1,8 +1,10 @@
 # Dependabot configuration — weekly dependency updates.
 # https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
 #
-# Minor/patch updates are grouped into a single PR per ecosystem. uv updates
-# are auto-merged by the companion workflow
+# Every update waits a 7-day cooldown after its release, so a compromised
+# release is usually yanked before Dependabot proposes it (security updates
+# are not delayed). Minor/patch updates are grouped into a single PR per
+# ecosystem. uv updates are auto-merged by the companion workflow
 # (.github/workflows/dependabot-auto-merge.yml) once the CI checks pass;
 # pre-commit hook, Docker and GitHub Actions updates and all major updates need
 # a manual review. pre-commit hooks are pinned to commit SHAs ("# frozen:"
@@ -25,6 +27,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       minor-and-patch:
         update-types:
@@ -38,6 +42,8 @@ updates:
     directory: "/.devcontainer/checkmk"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       minor-and-patch:
         update-types:
@@ -53,6 +59,8 @@ updates:
     directory: "/.devcontainer/almalinux"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       minor-and-patch:
         update-types:
@@ -69,6 +77,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       minor-and-patch:
         update-types:
@@ -82,6 +92,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       minor-and-patch:
         update-types:
