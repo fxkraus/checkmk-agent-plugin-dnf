@@ -321,6 +321,17 @@ new-pkg.x86_64                     2-1.fc42       updates
     [ "${lines[6]}" = "1000" ]
 }
 
+@test "A first refresh that never completes is not reported as running" {
+    use_fake_pm dnf
+    # First attempt an hour ago, the latest one (mtime) still in the backoff
+    echo "$(( $(date +%s) - 3600 ))" > "${PENDING}"
+
+    run agent
+    [ "$status" -eq 0 ]
+    [ "${#lines[@]}" -eq 2 ]
+    [[ "${lines[1]}" == "ERROR: No background refresh has completed since "* ]]
+}
+
 @test "An unfinished refresh blocks new ones until the backoff has passed" {
     use_fake_pm dnf
     fake_pm_reply check-update 0
