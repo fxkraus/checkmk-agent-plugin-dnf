@@ -72,9 +72,12 @@ use_fake_pm() {
     mkdir -p "${FAKE_PM_DIR}" "${STUB_BIN}"
 
     local tool
-    for tool in bash awk cat cut date flock grep head ls mkdir mv paste rm sed setsid sort stat tail timeout touch uname; do
+    for tool in bash awk cat cut date flock grep head ls mkdir mv nice paste rm sed setsid sort stat tail timeout touch uname; do
         ln -s "$(command -v "$tool")" "${STUB_BIN}/${tool}"
     done
+    if command -v ionice &>/dev/null; then
+        ln -s "$(command -v ionice)" "${STUB_BIN}/ionice"
+    fi
     ln -s "${BATS_TEST_DIRNAME}/fixtures/fake-pm" "${STUB_BIN}/$1"
 }
 
@@ -527,6 +530,36 @@ new-pkg.x86_64                     2-1.fc42       updates
     (( SECONDS < 15 ))
     # Falls back to setsid
     wait_for_file "${RESULT_CACHE}"
+}
+
+@test "systemd: the refresh unit runs at low priority with private /tmp" {
+    use_fake_pm dnf
+    ln -s "${BATS_TEST_DIRNAME}/fixtures/fake-systemd-run" "${STUB_BIN}/systemd-run"
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+
+    run agent
+    run cat "${FAKE_PM_DIR}/systemd-run.args"
+    echo "$output"
+    [[ "$output" == *$'\n--property=Nice=10\n'* ]]
+    [[ "$output" == *$'\n--property=IOSchedulingClass=idle\n'* ]]
+    [[ "$output" == *$'\n--property=PrivateTmp=yes\n'* ]]
+    [[ "$output" == *$'\n--property=ProtectHome=read-only\n'* ]]
+}
+
+@test "The setsid refresh runs at low priority" {
+    use_fake_pm dnf
+    fake_pm_reply check-update 0
+    fake_pm_reply check-update-security 0
+    # Record the niceness the package manager runs with
+    rm -f "${STUB_BIN}/dnf"
+    printf '#!/bin/bash\n/usr/bin/nice > "${FAKE_PM_DIR}/niceness"\nexec %s "$@"\n' \
+        "${BATS_TEST_DIRNAME}/fixtures/fake-pm" > "${STUB_BIN}/dnf"
+    chmod +x "${STUB_BIN}/dnf"
+
+    run agent
+    wait_for_file "${RESULT_CACHE}"
+    [ "$(cat "${FAKE_PM_DIR}/niceness")" -ge 10 ]
 }
 
 @test "systemd: falls back to setsid when systemd-run fails" {

@@ -82,7 +82,9 @@ it is older than 7 days (configurable).
   On systemd hosts it runs in its own transient unit
   (`systemd-run --unit=cmk-agent-dnf-refresh`), because Checkmk's
   socket-activated `check-mk-agent@.service` kills every process left behind
-  when the agent exits; elsewhere it is detached with `setsid`. The first run
+  when the agent exits; elsewhere it is detached with `setsid`. The refresh
+  runs at low CPU and IO priority (nice 10, idle IO class), in the unit also
+  with a private `/tmp` and read-only home directories. The first run
   after installing reports "running in the background" (UNKNOWN) until that
   refresh finishes. If it has not finished 15 minutes after the first attempt
   (it keeps timing out or being killed), the error says since when instead.

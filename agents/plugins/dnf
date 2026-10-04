@@ -453,23 +453,30 @@ get_refresh_pending_since() {
 # setsid, where flock skips a duplicate refresh.
 # setsid puts the refresh in its own session, so the agent neither waits for
 # it nor kills it when the plugin run ends; timeout bounds the whole refresh.
+# The refresh runs at low CPU and IO priority, so dnf's solver doesn't compete
+# with the host's workload. NoNewPrivileges is left out: it would block the
+# SELinux transition into rpm_t, and ProtectSystem the sqlite rpmdb under /usr.
 start_refresh() {
     local self="${BASH_SOURCE[0]}"
     [[ "$self" == /* ]] || self="${PWD}/${self}"
+    local -a low_priority=(nice -n 10)
+    command -v ionice >/dev/null 2>&1 && low_priority+=(ionice -c 3 -t)
 
     if command -v systemd-run >/dev/null 2>&1 \
         && timeout "${QUERY_TIMEOUT}s" systemd-run --no-block --collect --quiet --no-ask-password \
             --unit=cmk-agent-dnf-refresh \
             --property=RuntimeMaxSec="${REFRESH_TIMEOUT}" \
+            --property=Nice=10 --property=IOSchedulingClass=idle \
+            --property=PrivateTmp=yes --property=ProtectHome=read-only \
             --setenv=MK_VARDIR="${MK_VARDIR}" \
             "$BASH" "$self" --refresh </dev/null >/dev/null 2>&1; then
         return
     fi
 
     if command -v setsid >/dev/null 2>&1 && command -v flock >/dev/null 2>&1; then
-        setsid timeout "${REFRESH_TIMEOUT}s" "$BASH" "$self" --refresh </dev/null >/dev/null 2>&1 &
+        setsid "${low_priority[@]}" timeout "${REFRESH_TIMEOUT}s" "$BASH" "$self" --refresh </dev/null >/dev/null 2>&1 &
     else
-        timeout "${INLINE_REFRESH_TIMEOUT}s" "$BASH" "$self" --refresh </dev/null >/dev/null 2>&1 || true
+        "${low_priority[@]}" timeout "${INLINE_REFRESH_TIMEOUT}s" "$BASH" "$self" --refresh </dev/null >/dev/null 2>&1 || true
     fi
 }
 
