@@ -1,8 +1,10 @@
 # Enable auto-merge for Dependabot minor and patch updates of the uv ecosystem
 # (hash-locked in uv.lock). GitHub merges the PR only after all required status
-# checks (CI workflow) have passed. pre-commit hook, Docker and GitHub Actions
-# updates and all major updates are left open for manual review: hooks run on
-# every contributor's machine, so a compromised release must not land unseen.
+# checks (CI workflow) have passed. These tools (pre-commit, ruff, mypy, pytest
+# and their dependencies) also run on contributors' machines; the 7-day
+# Dependabot cooldown (.github/dependabot.yml) is what keeps a compromised
+# release from landing before it is yanked. pre-commit hook, Docker and GitHub
+# Actions updates and all major updates are left open for manual review.
 #
 # Repository prerequisites (without them `gh pr merge --auto` merges at once,
 # before CI has finished):

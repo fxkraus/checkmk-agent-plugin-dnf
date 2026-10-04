@@ -530,11 +530,12 @@ Every commit on `main` produces an MKP, attached to the CI run as the
 artifact `dnf-mkp-<commit-sha>` (kept 90 days, version `0.0.<n>` where `<n>`
 is the number of commits). Tagged releases get a proper version.
 
-Dependabot minor and patch updates of the uv ecosystem (hash-locked in
+Dependabot proposes a version only 7 days after its release (cooldown), so a
+compromised release is usually yanked first; security updates are not
+delayed. Minor and patch updates of the uv ecosystem (hash-locked in
 `uv.lock`) are merged automatically once all required checks pass.
 pre-commit hook, Docker image and GitHub Actions updates, and all major
-updates, always need a manual review: the hooks run on every contributor's
-machine. Hooks are pinned to commit SHAs (`# frozen: vX.Y.Z` comments);
+updates, always need a manual review. Hooks are pinned to commit SHAs (`# frozen: vX.Y.Z` comments);
 refresh them with `pre-commit autoupdate --freeze`. The Checkmk images use the
 floating `2.5.0-latest` tag and are not managed by Dependabot (see the note in
 `.github/dependabot.yml`). The distribution images the tests run in
