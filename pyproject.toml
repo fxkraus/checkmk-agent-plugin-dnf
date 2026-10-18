@@ -16,7 +16,7 @@ lint = ["pre-commit==4.6.2"]
 dev = [
     { include-group = "test" },
     { include-group = "lint" },
-    "ruff==0.16.10",
+    "ruff==0.17.0",
 ]
 
 [tool.uv]
