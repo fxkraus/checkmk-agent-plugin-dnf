@@ -10,13 +10,13 @@ requires-python = ">=3.13"
 [dependency-groups]
 # Installed into the Checkmk interpreter by tests/run-pytest.sh and
 # tests/run-mypy.sh
-test = ["pytest==9.1.1", "mypy==2.4.0"]
+test = ["pytest==9.2.0", "mypy==2.4.1"]
 # Used by the CI lint job
 lint = ["pre-commit==4.7.0"]
 dev = [
     { include-group = "test" },
     { include-group = "lint" },
-    "ruff==0.17.2",
+    "ruff==0.17.3",
 ]
 
 [tool.uv]
